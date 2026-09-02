@@ -1,0 +1,1454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>SABOTAGE</title>
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+html, body {
+  background: #000;
+  color: #fff;
+  font-family: 'Courier New', monospace;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  touch-action: none;
+}
+#hud {
+  display: flex;
+  gap: 12px;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  width: 100%;
+  justify-content: space-around;
+  align-items: center;
+  background: #111;
+  border-bottom: 2px solid #333;
+  z-index: 10;
+  flex-shrink: 0;
+}
+.hud-item { text-align: center; }
+.hud-label { font-size: 0.65rem; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+.hud-value { font-size: 1.15rem; color: #4f4; font-weight: bold; }
+#mute-btn {
+  background: #1a3a1a;
+  border: 1.5px solid #4f4;
+  color: #4f4;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: bold;
+  padding: 6px 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.15s;
+  touch-action: manipulation;
+}
+#mute-btn:hover { background: #2a5a2a; }
+#mute-btn.muted {
+  background: #3a1a1a;
+  border-color: #f55;
+  color: #f77;
+}
+#mute-btn.muted:hover { background: #5a2a2a; }
+
+#canvas-wrap {
+  position: relative;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  touch-action: none;
+}
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none;
+}
+#overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.88);
+  z-index: 30;
+  padding: 20px;
+  text-align: center;
+}
+#overlay.hidden { display: none; }
+#overlay h1 {
+  font-size: clamp(2rem, 7vw, 3.2rem);
+  color: #4f4;
+  margin-bottom: 8px;
+  letter-spacing: 6px;
+  text-shadow: 0 0 12px rgba(68, 255, 68, 0.6);
+}
+#overlay h2 {
+  font-size: clamp(0.9rem, 3.5vw, 1.15rem);
+  color: #ff4;
+  margin-bottom: 16px;
+}
+#overlay p {
+  color: #bbb;
+  margin: 4px 0;
+  font-size: clamp(0.75rem, 3vw, 0.9rem);
+  line-height: 1.4;
+}
+#overlay .controls {
+  margin-top: 15px;
+  color: #7a7;
+  font-size: clamp(0.7rem, 2.7vw, 0.82rem);
+  max-width: 520px;
+}
+#overlay button {
+  margin-top: 22px;
+  padding: 14px 36px;
+  background: #1a3a1a;
+  border: 2px solid #4f4;
+  color: #4f4;
+  font-size: 1.1rem;
+  font-family: inherit;
+  font-weight: bold;
+  cursor: pointer;
+  letter-spacing: 2px;
+  border-radius: 4px;
+  box-shadow: 0 0 15px rgba(68, 255, 68, 0.3);
+  touch-action: manipulation;
+}
+#overlay button:hover, #overlay button:active {
+  background: #2a5a2a;
+  box-shadow: 0 0 22px rgba(68, 255, 68, 0.7);
+}
+
+/* Touch On-Screen Controls */
+#touch-controls {
+  position: absolute;
+  bottom: 12px;
+  left: 0;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 16px;
+  pointer-events: none;
+  z-index: 20;
+}
+.touch-group {
+  display: flex;
+  gap: 12px;
+  pointer-events: auto;
+}
+.touch-btn {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: rgba(20, 45, 20, 0.7);
+  border: 2px solid rgba(68, 255, 68, 0.6);
+  color: #4f4;
+  font-family: inherit;
+  font-size: 1.3rem;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(68, 255, 68, 0.25);
+  transition: transform 0.08s, background 0.08s;
+  pointer-events: auto;
+}
+.touch-btn:active, .touch-btn.active {
+  background: rgba(45, 100, 45, 0.95);
+  border-color: #4f4;
+  transform: scale(0.92);
+  box-shadow: 0 0 18px rgba(68, 255, 68, 0.7);
+}
+.touch-btn.fire-btn {
+  width: 66px;
+  height: 66px;
+  background: rgba(60, 20, 20, 0.7);
+  border: 2px solid rgba(255, 68, 68, 0.7);
+  color: #ff6666;
+  font-size: 0.85rem;
+  letter-spacing: 1px;
+}
+.touch-btn.fire-btn:active, .touch-btn.fire-btn.active {
+  background: rgba(130, 30, 30, 0.95);
+  border-color: #ff4444;
+  box-shadow: 0 0 18px rgba(255, 68, 68, 0.8);
+}
+</style>
+</head>
+<body>
+<div id="hud">
+  <div class="hud-item"><div class="hud-label">Score</div><div class="hud-value" id="score">0</div></div>
+  <div class="hud-item"><div class="hud-label">Wave</div><div class="hud-value" id="wave">1</div></div>
+  <div class="hud-item"><div class="hud-label">Phase</div><div class="hud-value" id="phase">HELO</div></div>
+  <div class="hud-item"><div class="hud-label">Stack (3=💥)</div><div class="hud-value" id="paras">0/3L · 0/3R</div></div>
+  <button id="mute-btn" onclick="toggleMute()" aria-label="Toggle Sound">🔊 AUDIO</button>
+</div>
+<div id="canvas-wrap">
+  <canvas id="c"></canvas>
+  <div id="touch-controls">
+    <div class="touch-group">
+      <button class="touch-btn" id="btn-left" aria-label="Aim Left">◀</button>
+      <button class="touch-btn" id="btn-right" aria-label="Aim Right">▶</button>
+    </div>
+    <div class="touch-group">
+      <button class="touch-btn fire-btn" id="btn-fire" aria-label="Fire">FIRE</button>
+    </div>
+  </div>
+  <div id="overlay">
+    <h1>SABOTAGE</h1>
+    <h2>Apple II · 1981 · Mark Allen</h2>
+    <p>Defend your turret from helicopters, paratroopers &amp; jets.</p>
+    <p>Shoot paratroopers in the air! Men on ground can only be killed by bombs or falling troopers!</p>
+    <p>Bombs = 25pts · Heli/Jet = 5pts · Para = 2pts · Shot = -1pt</p>
+    <p class="controls"><b>Desktop:</b> ← / → or A / D to aim · Hold SPACE / Click for Rapid Fire · M = Mute</p>
+    <p class="controls"><b>Mobile:</b> Tap/Drag sky to aim &amp; shoot · Hold FIRE for Rapid Fire</p>
+    <button id="start-btn" onclick="startGame()">▶ START MISSION</button>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+const wrap = document.getElementById("canvas-wrap");
+
+let W, H;
+function resize() {
+  W = canvas.width = wrap.clientWidth;
+  H = canvas.height = wrap.clientHeight;
+}
+resize();
+window.addEventListener("resize", resize);
+
+// RETRO AUDIO (Web Audio API)
+let audioCtx = null;
+let isMuted = false;
+window.isMuted = false;
+
+function toggleMute() {
+  isMuted = !isMuted;
+  window.isMuted = isMuted;
+  const btn = document.getElementById("mute-btn");
+  if (isMuted) {
+    btn.classList.add("muted");
+    btn.textContent = "🔇 MUTED";
+  } else {
+    btn.classList.remove("muted");
+    btn.textContent = "🔊 AUDIO";
+    getAudioCtx();
+  }
+}
+
+function getAudioCtx() {
+  if (!audioCtx) {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (AudioContext) audioCtx = new AudioContext();
+  }
+  if (audioCtx && audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
+  return audioCtx;
+}
+
+function playSound(type) {
+  if (isMuted) return;
+  try {
+    const actx = getAudioCtx();
+    if (!actx) return;
+    const now = actx.currentTime;
+    
+    if (type === "shoot") {
+      const osc = actx.createOscillator();
+      const gain = actx.createGain();
+      osc.type = "square";
+      osc.frequency.setValueAtTime(750, now);
+      osc.frequency.exponentialRampToValueAtTime(100, now + 0.07);
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.07);
+      osc.connect(gain);
+      gain.connect(actx.destination);
+      osc.start(now);
+      osc.stop(now + 0.07);
+    } else if (type === "hit") {
+      // Punchy metallic hit blip
+      const osc = actx.createOscillator();
+      const gain = actx.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(1100, now);
+      osc.frequency.exponentialRampToValueAtTime(300, now + 0.09);
+      gain.gain.setValueAtTime(0.22, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.09);
+      osc.connect(gain);
+      gain.connect(actx.destination);
+      osc.start(now);
+      osc.stop(now + 0.09);
+    } else if (type === "explosion") {
+      const bufferSize = Math.floor(actx.sampleRate * 0.22);
+      const buffer = actx.createBuffer(1, bufferSize, actx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+      const noise = actx.createBufferSource();
+      noise.buffer = buffer;
+      const filter = actx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(800, now);
+      filter.frequency.linearRampToValueAtTime(50, now + 0.22);
+      const gain = actx.createGain();
+      gain.gain.setValueAtTime(0.25, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(actx.destination);
+      noise.start(now);
+      noise.stop(now + 0.22);
+    } else if (type === "splat") {
+      const osc = actx.createOscillator();
+      const gain = actx.createGain();
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(160, now);
+      osc.frequency.exponentialRampToValueAtTime(30, now + 0.12);
+      gain.gain.setValueAtTime(0.25, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+      osc.connect(gain);
+      gain.connect(actx.destination);
+      osc.start(now);
+      osc.stop(now + 0.12);
+    } else if (type === "gameover") {
+      const osc = actx.createOscillator();
+      const gain = actx.createGain();
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(320, now);
+      osc.frequency.linearRampToValueAtTime(60, now + 0.6);
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+      osc.connect(gain);
+      gain.connect(actx.destination);
+      osc.start(now);
+      osc.stop(now + 0.6);
+    }
+  } catch (e) {
+    // Ignore audio errors if audio context blocked before interaction
+  }
+}
+
+// GAME STATE
+let running = false;
+let score = 0;
+let wave = 1;
+let phase = "helo"; // helo, rest, jet
+let turretAngle = -Math.PI / 2; // pointing straight up
+let turretX, turretY;
+let shells = [];
+let helicopters = [];
+let jets = [];
+let paratroopers = []; // {x, y, vy, vx, parachute, state: 'falling'|'walking'|'stacked', side: 'left'|'right', stackLevel: 0..2, animTimer: 0}
+let bombs = [];
+let explosions = [];
+let waveTimer = 0;
+let heloSpawnTimer = 0;
+let jetSpawnTimer = 0;
+let restTimer = 0;
+let keys = {};
+let lastTime = 0;
+let gameTime = 0;
+let waveMsg = "";
+let waveMsgTimer = 0;
+let fireCooldown = 0;
+let isMouseDown = false;
+let isSpaceHeld = false;
+let isFireBtnDown = false;
+
+// Expose state and controls for test automation and debugging
+Object.defineProperty(window, 'W', { get: () => W, set: v => W = v });
+Object.defineProperty(window, 'H', { get: () => H, set: v => H = v });
+Object.defineProperty(window, 'groundY', { get: () => H * TURRET_BASE_Y_RATIO });
+Object.defineProperty(window, 'running', { get: () => running, set: v => running = v });
+Object.defineProperty(window, 'score', { get: () => score, set: v => score = v });
+Object.defineProperty(window, 'turretAngle', { get: () => turretAngle, set: v => turretAngle = v });
+Object.defineProperty(window, 'turretX', { get: () => turretX, set: v => turretX = v });
+Object.defineProperty(window, 'turretY', { get: () => turretY, set: v => turretY = v });
+Object.defineProperty(window, 'shells', { get: () => shells, set: v => shells = v });
+Object.defineProperty(window, 'helicopters', { get: () => helicopters, set: v => helicopters = v });
+Object.defineProperty(window, 'jets', { get: () => jets, set: v => jets = v });
+Object.defineProperty(window, 'paratroopers', { get: () => paratroopers, set: v => paratroopers = v });
+Object.defineProperty(window, 'bombs', { get: () => bombs, set: v => bombs = v });
+Object.defineProperty(window, 'explosions', { get: () => explosions, set: v => explosions = v });
+window.reset = reset;
+window.update = update;
+window.fire = fire;
+
+const TURRET_BASE_Y_RATIO = 0.92;
+const SHELL_SPEED = 550;
+const SHELL_COST = 1;
+const HELO_SPEED_BASE = 80;
+const JET_SPEED_BASE = 200;
+const PARA_FALL_SPEED = 60;
+const PARA_WALK_SPEED = 38;
+const PARA_CLIMB_SPEED = 24;
+const BOMB_DROP_CHANCE = 0.008;
+const WAVE_HELO_COUNT = 5;
+const WAVE_JET_COUNT = 4;
+const REST_DURATION = 3;
+const FIRE_COOLDOWN_TIME = 0.13; // ~7.7 shots/sec for crisp rapid fire
+
+function reset() {
+  score = 0;
+  wave = 1;
+  phase = "helo";
+  turretAngle = -Math.PI / 2;
+  turretX = W / 2;
+  turretY = H * TURRET_BASE_Y_RATIO;
+  shells = [];
+  helicopters = [];
+  jets = [];
+  paratroopers = [];
+  bombs = [];
+  explosions = [];
+  waveTimer = 0;
+  heloSpawnTimer = 2;
+  jetSpawnTimer = 2;
+  restTimer = 0;
+  gameTime = 0;
+  waveMsg = "";
+  waveMsgTimer = 0;
+  fireCooldown = 0;
+  isMouseDown = false;
+  isSpaceHeld = false;
+  isFireBtnDown = false;
+}
+
+function startGame() {
+  getAudioCtx();
+  document.getElementById("overlay").classList.add("hidden");
+  reset();
+  running = true;
+  lastTime = performance.now();
+  requestAnimationFrame(loop);
+}
+
+function endGame(reason) {
+  running = false;
+  isMouseDown = false;
+  isSpaceHeld = false;
+  isFireBtnDown = false;
+  playSound("gameover");
+  const overlay = document.getElementById("overlay");
+  overlay.classList.remove("hidden");
+  overlay.querySelector("h1").textContent = "💥 DESTROYED";
+  overlay.querySelector("h2").textContent = reason;
+  overlay.querySelectorAll("p")[0].textContent = `Final Score: ${score}`;
+  overlay.querySelectorAll("p")[1].textContent = `Waves survived: ${wave - 1}`;
+  overlay.querySelector("button").textContent = "▶ RETRY MISSION";
+}
+
+// SPAWNING
+function spawnHelo() {
+  const dir = Math.random() > 0.5 ? 1 : -1;
+  const heightRange = Math.max(0.15, 0.5 - wave * 0.03);
+  const y = H * (0.1 + Math.random() * heightRange);
+  helicopters.push({
+    x: dir === 1 ? -40 : W + 40,
+    y: y,
+    vx: dir * (HELO_SPEED_BASE + wave * 10),
+    vy: 0,
+    rotorAngle: 0,
+    dropping: false
+  });
+}
+
+function spawnJet() {
+  const dir = Math.random() > 0.5 ? 1 : -1;
+  const y = H * (0.08 + Math.random() * 0.3);
+  jets.push({
+    x: dir === 1 ? -30 : W + 30,
+    y: y,
+    vx: dir * (JET_SPEED_BASE + wave * 15),
+    vy: 0
+  });
+}
+
+function spawnPara(helo) {
+  paratroopers.push({
+    x: helo.x,
+    y: helo.y + 15,
+    vy: PARA_FALL_SPEED,
+    vx: 0,
+    parachute: false,
+    state: "falling", // 'falling', 'walking', 'stacked'
+    side: null,
+    stackLevel: 0,
+    animTimer: 0
+  });
+}
+
+function spawnBomb(x, y, vx) {
+  bombs.push({
+    x: x, y: y,
+    vy: 100 + Math.random() * 50,
+    vx: vx * 0.3
+  });
+}
+
+function explode(x, y, size, color) {
+  explosions.push({x, y, size, maxSize: size, life: 0.5, maxLife: 0.5, color});
+  playSound("explosion");
+}
+
+// AIMING LOGIC
+function updateAimFromCoords(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return;
+  const mx = (clientX - rect.left) * (canvas.width / rect.width);
+  const my = (clientY - rect.top) * (canvas.height / rect.height);
+  
+  const dx = mx - turretX;
+  const dy = my - turretY;
+  const angle = Math.atan2(dy, dx);
+  // Clamp above ground level: -Math.PI + 0.15 rad to -0.15 rad
+  turretAngle = Math.max(-Math.PI + 0.15, Math.min(-0.15, angle));
+}
+
+// FIRING LOGIC
+function fire() {
+  if (!running) return;
+  if (fireCooldown > 0) return;
+  fireCooldown = FIRE_COOLDOWN_TIME;
+  
+  score -= SHELL_COST;
+  const tipX = turretX + Math.cos(turretAngle) * 35;
+  const tipY = turretY + Math.sin(turretAngle) * 35;
+  shells.push({
+    x: tipX, y: tipY,
+    vx: Math.cos(turretAngle) * SHELL_SPEED,
+    vy: Math.sin(turretAngle) * SHELL_SPEED
+  });
+  
+  // Muzzle flash
+  explosions.push({x: tipX, y: tipY, size: 8, maxSize: 8, life: 0.08, maxLife: 0.08, color: "#ff0"});
+  playSound("shoot");
+}
+
+// INPUT - KEYBOARD
+document.addEventListener("keydown", e => {
+  keys[e.key] = true;
+  keys[e.code] = true;
+  
+  if (e.key === "m" || e.key === "M") {
+    toggleMute();
+    return;
+  }
+  
+  const isSpace = e.key === " " || e.key === "Spacebar" || e.code === "Space";
+  const isEnter = e.key === "Enter" || e.code === "Enter";
+  
+  if (isSpace || isEnter) {
+    if (!running) {
+      const overlay = document.getElementById("overlay");
+      if (!overlay.classList.contains("hidden")) {
+        e.preventDefault();
+        startGame();
+        return;
+      }
+    }
+  }
+  
+  if (isSpace && running) {
+    e.preventDefault();
+    if (!isSpaceHeld) {
+      isSpaceHeld = true;
+      fire();
+    }
+  }
+});
+
+document.addEventListener("keyup", e => {
+  keys[e.key] = false;
+  keys[e.code] = false;
+  
+  const isSpace = e.key === " " || e.key === "Spacebar" || e.code === "Space";
+  if (isSpace) {
+    isSpaceHeld = false;
+  }
+});
+
+window.addEventListener("blur", () => {
+  isSpaceHeld = false;
+  isMouseDown = false;
+  isFireBtnDown = false;
+});
+
+// INPUT - MOUSE
+canvas.addEventListener("mousemove", e => {
+  if (running) {
+    updateAimFromCoords(e.clientX, e.clientY);
+  }
+});
+
+canvas.addEventListener("mousedown", e => {
+  if (e.button !== 0) return;
+  if (!running) return;
+  isMouseDown = true;
+  updateAimFromCoords(e.clientX, e.clientY);
+  fire();
+});
+
+window.addEventListener("mouseup", e => {
+  if (e.button === 0) {
+    isMouseDown = false;
+  }
+});
+
+// INPUT - TOUCH (Direct tap & drag on canvas to aim & fire)
+canvas.addEventListener("touchstart", e => {
+  e.preventDefault();
+  if (!running) return;
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    const touch = e.changedTouches[i];
+    updateAimFromCoords(touch.clientX, touch.clientY);
+    fire();
+  }
+}, { passive: false });
+
+canvas.addEventListener("touchmove", e => {
+  e.preventDefault();
+  if (!running) return;
+  if (e.touches.length > 0) {
+    const touch = e.touches[0];
+    updateAimFromCoords(touch.clientX, touch.clientY);
+  }
+}, { passive: false });
+
+// INPUT - ON-SCREEN TOUCH BUTTONS
+function setupTouchButton(btnId, onDown, onUp) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  
+  const handleDown = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    btn.classList.add("active");
+    onDown();
+  };
+  
+  const handleUp = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    btn.classList.remove("active");
+    if (onUp) onUp();
+  };
+  
+  btn.addEventListener("touchstart", handleDown, { passive: false });
+  btn.addEventListener("touchend", handleUp, { passive: false });
+  btn.addEventListener("touchcancel", handleUp, { passive: false });
+  btn.addEventListener("mousedown", handleDown);
+  btn.addEventListener("mouseup", handleUp);
+  btn.addEventListener("mouseleave", handleUp);
+}
+
+setupTouchButton("btn-left", () => { keys["ArrowLeft"] = true; }, () => { keys["ArrowLeft"] = false; });
+setupTouchButton("btn-right", () => { keys["ArrowRight"] = true; }, () => { keys["ArrowRight"] = false; });
+setupTouchButton("btn-fire", () => {
+  isFireBtnDown = true;
+  if (running) fire();
+}, () => {
+  isFireBtnDown = false;
+});
+
+// UPDATE
+function update(dt) {
+  gameTime += dt;
+  if (fireCooldown > 0) fireCooldown -= dt;
+  
+  // Continuous Rapid Fire when Space, Mouse, or Fire Button is held
+  if (running && (isSpaceHeld || isMouseDown || isFireBtnDown)) {
+    fire();
+  }
+
+  // Turret aim keyboard / touch button controls
+  const aimSpeed = 3.5;
+  if (keys["ArrowLeft"] || keys["a"] || keys["A"] || keys["KeyA"]) turretAngle -= aimSpeed * dt;
+  if (keys["ArrowRight"] || keys["d"] || keys["D"] || keys["KeyD"]) turretAngle += aimSpeed * dt;
+  turretAngle = Math.max(-Math.PI + 0.15, Math.min(-0.15, turretAngle));
+  turretX = W / 2;
+  turretY = H * TURRET_BASE_Y_RATIO;
+  const groundY = H * TURRET_BASE_Y_RATIO;
+
+  // Wave logic
+  waveTimer += dt;
+
+  if (phase === "helo") {
+    heloSpawnTimer -= dt;
+    const heloCount = helicopters.length + paratroopers.filter(p => p.state === "falling").length;
+    if (heloSpawnTimer <= 0 && heloCount < WAVE_HELO_COUNT + wave) {
+      spawnHelo();
+      heloSpawnTimer = Math.max(1.0, 3.0 - wave * 0.2);
+    }
+    // Check if wave done
+    if (heloCount === 0 && waveTimer > 3) {
+      phase = "rest";
+      restTimer = REST_DURATION;
+      waveMsg = "CLEAR SKY — JETS INCOMING!";
+      waveMsgTimer = 2.5;
+      waveTimer = 0;
+    }
+  } else if (phase === "rest") {
+    restTimer -= dt;
+    if (restTimer <= 0) {
+      phase = "jet";
+      waveTimer = 0;
+      jetSpawnTimer = 1.5;
+    }
+  } else if (phase === "jet") {
+    jetSpawnTimer -= dt;
+    const jetCount = jets.length;
+    if (jetSpawnTimer <= 0 && jetCount < WAVE_JET_COUNT) {
+      spawnJet();
+      jetSpawnTimer = Math.max(1.0, 2.5 - wave * 0.15);
+    }
+    if (jetCount === 0 && waveTimer > 2) {
+      wave++;
+      phase = "helo";
+      waveTimer = 0;
+      heloSpawnTimer = 2;
+      waveMsg = `WAVE ${wave}`;
+      waveMsgTimer = 2;
+    }
+  }
+
+  // Helicopters
+  for (let i = helicopters.length - 1; i >= 0; i--) {
+    const h = helicopters[i];
+    h.x += h.vx * dt;
+    h.rotorAngle += 20 * dt;
+
+    // Drop paratrooper or bomb
+    if (Math.random() < BOMB_DROP_CHANCE * dt * 60) {
+      if (Math.random() < 0.7) {
+        spawnPara(h);
+        h.dropping = true;
+        setTimeout(() => h.dropping = false, 1000);
+      } else {
+        spawnBomb(h.x, h.y + 10, h.vx);
+      }
+    }
+
+    if (h.x < -60 || h.x > W + 60) helicopters.splice(i, 1);
+  }
+
+  // Jets
+  for (let i = jets.length - 1; i >= 0; i--) {
+    const j = jets[i];
+    j.x += j.vx * dt;
+
+    // Jets drop bombs
+    if (Math.random() < 0.015 * dt * 60) {
+      spawnBomb(j.x, j.y + 5, j.vx * 0.5);
+    }
+
+    if (j.x < -50 || j.x > W + 50) jets.splice(i, 1);
+  }
+
+  // Helper to kill ground troopers (from bombs or falling troopers) and shift stack
+  function killGroundTrooper(j, cause) {
+    const p = paratroopers[j];
+    if (!p) return;
+    score += 2;
+    explode(p.x, p.y - 5, 18, cause === "crush" ? "#da8" : "#af4");
+    
+    if (p.state === "stacked" || p.state === "climbing") {
+      const killedLevel = p.stackLevel;
+      const killedSide = p.side;
+      paratroopers.filter(t => t.side === killedSide && (t.state === "stacked" || t.state === "climbing") && t.stackLevel > killedLevel)
+                  .forEach(t => {
+                    t.stackLevel--;
+                    t.targetY = groundY - 5 - (t.stackLevel * 14);
+                    if (t.state === "stacked") {
+                      t.y += 14;
+                    }
+                  });
+    }
+    paratroopers.splice(j, 1);
+  }
+
+  // Paratroopers logic: Falling / Freefalling -> Landing / Splat -> Walking -> Climbing -> Stacking -> (Top of 3-Stack = Game Over)
+  for (let i = paratroopers.length - 1; i >= 0; i--) {
+    const p = paratroopers[i];
+    if (!p) continue;
+    
+    if (p.state === "falling") {
+      p.y += p.vy * dt;
+      if (p.y > H * 0.35) p.parachute = true;
+      
+      // Landed safely on ground or turret
+      if (p.y >= groundY - 5) {
+        p.parachute = false;
+        p.y = groundY - 5;
+        
+        // Landed directly on turret gun dome
+        if (Math.abs(p.x - turretX) <= 22) {
+          explode(turretX, turretY, 40, "#f80");
+          endGame("A paratrooper landed directly on your turret!");
+          return;
+        }
+        
+        // Landed on Left side
+        if (p.x < turretX - 22) {
+          p.side = "left";
+          p.state = "walking";
+          p.vx = PARA_WALK_SPEED; // walk right towards turret
+        } else {
+          // Landed on Right side
+          p.side = "right";
+          p.state = "walking";
+          p.vx = -PARA_WALK_SPEED; // walk left towards turret
+        }
+      }
+    } else if (p.state === "freefalling") {
+      // Parachute was shot away! Falling fast to death
+      p.y += p.vy * dt;
+      p.animTimer += dt * 15;
+      
+      // Hit ground
+      if (p.y >= groundY - 5) {
+        // Check if the falling body crushes any walking, climbing, or stacked trooper on the ground
+        let crushedAny = false;
+        for (let j = paratroopers.length - 1; j >= 0; j--) {
+          const target = paratroopers[j];
+          if (target !== p && (target.state === "walking" || target.state === "stacked" || target.state === "climbing")) {
+            if (Math.abs(p.x - target.x) < 18) {
+              killGroundTrooper(j, "crush");
+              crushedAny = true;
+            }
+          }
+        }
+        
+        explode(p.x, groundY - 5, crushedAny ? 22 : 14, "#da8");
+        playSound("splat");
+        const curIdx = paratroopers.indexOf(p);
+        if (curIdx !== -1) {
+          paratroopers.splice(curIdx, 1);
+        }
+        continue;
+      }
+    } else if (p.state === "walking") {
+      p.x += p.vx * dt;
+      p.animTimer += dt * 8;
+      
+      const targetStackX = p.side === "left" ? (turretX - 28) : (turretX + 28);
+      const reachedTarget = p.side === "left" ? (p.x >= targetStackX) : (p.x <= targetStackX);
+      
+      if (reachedTarget) {
+        p.x = targetStackX;
+        p.vx = 0;
+        
+        // Count already stacked or climbing troopers on this side
+        const alreadyStacked = paratroopers.filter(t => t !== p && t.side === p.side && (t.state === "stacked" || t.state === "climbing"));
+        const targetStackLevel = alreadyStacked.length;
+        
+        if (targetStackLevel === 0) {
+          // Level 0: Stands on ground at base of turret
+          p.state = "stacked";
+          p.stackLevel = 0;
+          p.y = groundY - 5;
+        } else {
+          // Level 1 or 2: Climbs up the stack
+          p.state = "climbing";
+          p.stackLevel = targetStackLevel;
+          p.targetY = groundY - 5 - (targetStackLevel * 14);
+          p.y = groundY - 5;
+        }
+      }
+    } else if (p.state === "climbing") {
+      // Climbing up the stack
+      p.y -= PARA_CLIMB_SPEED * dt;
+      p.animTimer += dt * 10;
+      
+      if (p.y <= p.targetY) {
+        p.y = p.targetY;
+        p.state = "stacked";
+        
+        // When 3rd trooper finishes climbing to the top of the stack (level 2) -> Game Over!
+        if (p.stackLevel >= 2) {
+          explode(turretX, turretY, 50, "#f80");
+          endGame(`Three paratroopers stacked up on the ${p.side} and destroyed your turret!`);
+          return;
+        }
+      }
+    }
+  }
+
+  // Bombs
+  for (let i = bombs.length - 1; i >= 0; i--) {
+    const b = bombs[i];
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+
+    // Hit turret?
+    const dTurret = Math.hypot(b.x - turretX, b.y - turretY);
+    if (dTurret < 25) {
+      explode(turretX, turretY, 40, "#f80");
+      endGame("Direct bomb hit on your turret!");
+      return;
+    }
+
+    // Direct bomb hit on walking or stacked trooper
+    let bombHitTrooper = false;
+    for (let j = paratroopers.length - 1; j >= 0; j--) {
+      const p = paratroopers[j];
+      if ((p.state === "walking" || p.state === "stacked") && Math.hypot(b.x - p.x, b.y - p.y) < 18) {
+        killGroundTrooper(j, "bomb");
+        explode(b.x, b.y, 25, "#f60");
+        bombs.splice(i, 1);
+        bombHitTrooper = true;
+        break;
+      }
+    }
+    if (bombHitTrooper) continue;
+
+    // Hit ground
+    if (b.y >= groundY) {
+      explode(b.x, groundY, 22, "#f60");
+      // Splash damage on ground troops within 25px radius
+      for (let j = paratroopers.length - 1; j >= 0; j--) {
+        const p = paratroopers[j];
+        if ((p.state === "walking" || p.state === "stacked") && Math.abs(p.x - b.x) < 25) {
+          killGroundTrooper(j, "bomb");
+        }
+      }
+      bombs.splice(i, 1);
+    }
+  }
+
+  // Shells and Collisions
+  for (let i = shells.length - 1; i >= 0; i--) {
+    const s = shells[i];
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+
+    if (s.x < -20 || s.x > W + 20 || s.y < -20 || s.y > H + 20) {
+      shells.splice(i, 1);
+      continue;
+    }
+
+    let hit = false;
+    // Hit helo
+    for (let j = helicopters.length - 1; j >= 0; j--) {
+      if (Math.hypot(s.x - helicopters[j].x, s.y - helicopters[j].y) < 25) {
+        score += 5;
+        playSound("hit");
+        explode(helicopters[j].x, helicopters[j].y, 30, "#fa0");
+        helicopters.splice(j, 1);
+        shells.splice(i, 1);
+        hit = true;
+        break;
+      }
+    }
+    if (hit) continue;
+
+    // Hit jet
+    for (let j = jets.length - 1; j >= 0; j--) {
+      if (Math.hypot(s.x - jets[j].x, s.y - jets[j].y) < 20) {
+        score += 5;
+        playSound("hit");
+        explode(jets[j].x, jets[j].y, 25, "#f44");
+        jets.splice(j, 1);
+        shells.splice(i, 1);
+        hit = true;
+        break;
+      }
+    }
+    if (hit) continue;
+
+    // Hit paratroopers (ONLY airborne falling or airborne freefalling paratroopers! Men on ground cannot be shot)
+    for (let j = paratroopers.length - 1; j >= 0; j--) {
+      const p = paratroopers[j];
+      
+      // Men on the ground (walking, climbing, or stacked) CANNOT be shot by gunfire
+      if (p.state === "walking" || p.state === "stacked" || p.state === "climbing") {
+        continue;
+      }
+      
+      // Check if gunfire hits the Parachute canopy (not the man)
+      if (p.state === "falling" && p.parachute) {
+        const chuteDist = Math.hypot(s.x - p.x, s.y - (p.y - 25));
+        if (chuteDist < 16) {
+          // Parachute shredded! The man falls to his death!
+          score += 2;
+          playSound("hit");
+          explode(p.x, p.y - 25, 14, "#e55"); // Shredded chute puff
+          p.parachute = false;
+          p.state = "freefalling";
+          p.vy = 300; // rapid drop
+          shells.splice(i, 1);
+          hit = true;
+          break;
+        }
+      }
+      
+      // Check if gunfire hits the airborne Man directly
+      const manY = p.y - 5;
+      const manHitBox = 13;
+      if (Math.hypot(s.x - p.x, s.y - manY) < manHitBox) {
+        score += 2;
+        playSound("hit");
+        explode(p.x, p.y - 5, 16, "#af4");
+        paratroopers.splice(j, 1);
+        shells.splice(i, 1);
+        hit = true;
+        break;
+      }
+    }
+    if (hit) continue;
+
+    // Hit bomb
+    for (let j = bombs.length - 1; j >= 0; j--) {
+      if (Math.hypot(s.x - bombs[j].x, s.y - bombs[j].y) < 15) {
+        score += 25;
+        playSound("hit");
+        explode(bombs[j].x, bombs[j].y, 35, "#ff0");
+        bombs.splice(j, 1);
+        shells.splice(i, 1);
+        hit = true;
+        break;
+      }
+    }
+    if (hit) continue;
+  }
+
+  // Explosions
+  for (let i = explosions.length - 1; i >= 0; i--) {
+    explosions[i].life -= dt;
+    if (explosions[i].life <= 0) explosions.splice(i, 1);
+  }
+
+  // Wave msg
+  if (waveMsgTimer > 0) waveMsgTimer -= dt;
+
+  // HUD
+  document.getElementById("score").textContent = score;
+  document.getElementById("wave").textContent = wave;
+  document.getElementById("phase").textContent = phase.toUpperCase();
+  const leftStacked = paratroopers.filter(p => p.side === "left" && (p.state === "stacked" || p.state === "climbing")).length;
+  const rightStacked = paratroopers.filter(p => p.side === "right" && (p.state === "stacked" || p.state === "climbing")).length;
+  const leftClimbing = paratroopers.filter(p => p.side === "left" && p.state === "climbing").length;
+  const rightClimbing = paratroopers.filter(p => p.side === "right" && p.state === "climbing").length;
+  const leftWalking = paratroopers.filter(p => p.side === "left" && p.state === "walking").length;
+  const rightWalking = paratroopers.filter(p => p.side === "right" && p.state === "walking").length;
+  
+  let leftText = `${leftStacked}/3L`;
+  if (leftClimbing > 0) leftText = `${leftStacked}/3 (▲ climb)`;
+  else if (leftWalking > 0) leftText = `${leftStacked}/3 (${leftWalking}→)`;
+
+  let rightText = `${rightStacked}/3R`;
+  if (rightClimbing > 0) rightText = `${rightStacked}/3 (▲ climb)`;
+  else if (rightWalking > 0) rightText = `${rightStacked}/3 (←${rightWalking})`;
+  
+  document.getElementById("paras").textContent = `${leftText} · ${rightText}`;
+}
+
+// DRAW
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Sky gradient (night)
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, "#0a0a1a");
+  sky.addColorStop(0.7, "#111128");
+  sky.addColorStop(1, "#1a1a2a");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  ctx.fillStyle = "rgba(255,255,255,0.3)";
+  for (let i = 0; i < 30; i++) {
+    const sx = (i * 131.7) % W;
+    const sy = (i * 89.3) % (H * 0.5);
+    ctx.fillRect(sx, sy, 1, 1);
+  }
+
+  // Ground
+  const groundY = H * TURRET_BASE_Y_RATIO;
+  ctx.fillStyle = "#1a2a1a";
+  ctx.fillRect(0, groundY, W, H - groundY);
+  ctx.strokeStyle = "#2a4a2a";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, groundY);
+  ctx.lineTo(W, groundY);
+  ctx.stroke();
+
+  // Draw Paratroopers
+  paratroopers.forEach(p => drawPara(p));
+
+  // Helicopters
+  helicopters.forEach(h => drawHelo(h));
+
+  // Jets
+  jets.forEach(j => drawJet(j));
+
+  // Bombs
+  bombs.forEach(b => {
+    ctx.fillStyle = "#f44";
+    ctx.beginPath();
+    ctx.ellipse(b.x, b.y, 4, 8, 0, 0, Math.PI*2);
+    ctx.fill();
+    // Trail
+    ctx.fillStyle = "rgba(255,100,0,0.4)";
+    ctx.beginPath();
+    ctx.arc(b.x - b.vx*0.05, b.y - 10, 3, 0, Math.PI*2);
+    ctx.fill();
+  });
+
+  // Shells
+  shells.forEach(s => {
+    ctx.fillStyle = "#ff0";
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 3.5, 0, Math.PI*2);
+    ctx.fill();
+    // Trail
+    ctx.strokeStyle = "rgba(255,200,0,0.5)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(s.x, s.y);
+    ctx.lineTo(s.x - s.vx*0.03, s.y - s.vy*0.03);
+    ctx.stroke();
+  });
+
+  // Turret
+  drawTurret();
+
+  // Explosions
+  explosions.forEach(e => {
+    const progress = 1 - (e.life / e.maxLife);
+    const r = e.size * (0.5 + progress * 0.5);
+    ctx.globalAlpha = Math.max(0, e.life / e.maxLife);
+    ctx.fillStyle = e.color;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, r, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  });
+
+  // Wave message
+  if (waveMsgTimer > 0) {
+    ctx.globalAlpha = Math.min(1, waveMsgTimer);
+    ctx.fillStyle = "#ff4";
+    ctx.font = "bold 24px 'Courier New'";
+    ctx.textAlign = "center";
+    ctx.fillText(waveMsg, W/2, H/2);
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawTurret() {
+  const x = turretX, y = turretY;
+
+  // Base
+  ctx.fillStyle = "#3a5a3a";
+  ctx.beginPath();
+  ctx.arc(x, y, 22, 0, Math.PI*2);
+  ctx.fill();
+  ctx.strokeStyle = "#5a8a5a";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Inner circle
+  ctx.fillStyle = "#2a4a2a";
+  ctx.beginPath();
+  ctx.arc(x, y, 14, 0, Math.PI*2);
+  ctx.fill();
+
+  // Barrel
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(turretAngle);
+  ctx.fillStyle = "#5a7a5a";
+  ctx.fillRect(0, -4, 35, 8);
+  // Barrel tip
+  ctx.fillStyle = "#7a9a7a";
+  ctx.fillRect(30, -5, 8, 10);
+  ctx.restore();
+
+  // Highlight
+  ctx.fillStyle = "rgba(100,255,100,0.2)";
+  ctx.beginPath();
+  ctx.arc(x - 5, y - 5, 8, 0, Math.PI*2);
+  ctx.fill();
+}
+
+function drawHelo(h) {
+  const x = h.x, y = h.y;
+  const dir = h.vx > 0 ? 1 : -1;
+
+  // Body
+  ctx.fillStyle = "#556";
+  ctx.beginPath();
+  ctx.ellipse(x, y, 18, 10, 0, 0, Math.PI*2);
+  ctx.fill();
+  // Tail
+  ctx.fillStyle = "#445";
+  ctx.fillRect(x - dir*18, y-2, dir*20, 4);
+  // Tail rotor
+  ctx.fillStyle = "#667";
+  ctx.fillRect(x - dir*38, y-6, 2, 12);
+  // Cockpit
+  ctx.fillStyle = "#89a";
+  ctx.beginPath();
+  ctx.ellipse(x + dir*10, y-2, 6, 5, 0, 0, Math.PI*2);
+  ctx.fill();
+  // Main rotor
+  ctx.save();
+  ctx.translate(x, y - 12);
+  ctx.rotate(h.rotorAngle);
+  ctx.fillStyle = "#889";
+  ctx.fillRect(-25, -1.5, 50, 3);
+  ctx.restore();
+  // Rotor mast
+  ctx.fillStyle = "#556";
+  ctx.fillRect(x-1.5, y-12, 3, 4);
+
+  // Skids
+  ctx.strokeStyle = "#445";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x-12, y+10);
+  ctx.lineTo(x+12, y+10);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x-8, y+8);
+  ctx.lineTo(x-8, y+10);
+  ctx.moveTo(x+8, y+8);
+  ctx.lineTo(x+8, y+10);
+  ctx.stroke();
+}
+
+function drawJet(j) {
+  const x = j.x, y = j.y;
+  const dir = j.vx > 0 ? 1 : -1;
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(dir, 1);
+
+  // Body
+  ctx.fillStyle = "#667";
+  ctx.beginPath();
+  ctx.moveTo(20, 0);
+  ctx.lineTo(-15, -6);
+  ctx.lineTo(-20, -3);
+  ctx.lineTo(-20, 3);
+  ctx.lineTo(-15, 6);
+  ctx.closePath();
+  ctx.fill();
+
+  // Wings
+  ctx.fillStyle = "#556";
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-10, 12);
+  ctx.lineTo(-5, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-10, -12);
+  ctx.lineTo(-5, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  // Tail
+  ctx.fillStyle = "#556";
+  ctx.beginPath();
+  ctx.moveTo(-18, 0);
+  ctx.lineTo(-25, -8);
+  ctx.lineTo(-22, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  // Engine glow
+  ctx.fillStyle = "rgba(255,150,0,0.6)";
+  ctx.beginPath();
+  ctx.ellipse(-22, 0, 5, 3, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawPara(p) {
+  const x = p.x, y = p.y;
+
+  // Head
+  ctx.fillStyle = "#da8";
+  ctx.beginPath();
+  ctx.arc(x, y - 11, 4, 0, Math.PI*2);
+  ctx.fill();
+
+  if (p.state === "falling") {
+    // Falling body
+    ctx.fillStyle = "#8b4";
+    ctx.fillRect(x - 3, y - 8, 6, 12);
+
+    if (p.parachute) {
+      // Parachute canopy
+      ctx.fillStyle = "rgba(220, 60, 60, 0.85)";
+      ctx.beginPath();
+      ctx.arc(x, y - 25, 15, Math.PI, 0);
+      ctx.fill();
+      // Parachute lines
+      ctx.strokeStyle = "rgba(255,255,255,0.45)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x - 15, y - 25);
+      ctx.lineTo(x, y - 8);
+      ctx.moveTo(x + 15, y - 25);
+      ctx.lineTo(x, y - 8);
+      ctx.stroke();
+    }
+  } else if (p.state === "freefalling") {
+    // Freefalling panicked man falling to death without parachute!
+    ctx.fillStyle = "#8b4";
+    ctx.fillRect(x - 3, y - 8, 6, 10);
+
+    // Panicked flailing arms reaching upward
+    const armFlail = Math.sin(p.animTimer) * 4;
+    ctx.strokeStyle = "#8b4";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 3, y - 4);
+    ctx.lineTo(x - 7 + armFlail, y - 14);
+    ctx.moveTo(x + 3, y - 4);
+    ctx.lineTo(x + 7 - armFlail, y - 14);
+    ctx.stroke();
+
+    // Panicked flailing legs
+    const legFlail = Math.cos(p.animTimer) * 3;
+    ctx.strokeStyle = "#582";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 2, y + 2);
+    ctx.lineTo(x - 4 - legFlail, y + 8);
+    ctx.moveTo(x + 2, y + 2);
+    ctx.lineTo(x + 4 + legFlail, y + 8);
+    ctx.stroke();
+  } else if (p.state === "walking") {
+    // Walking body & swinging legs
+    ctx.fillStyle = "#7a3";
+    ctx.fillRect(x - 3, y - 8, 6, 10);
+    
+    // Walking legs
+    const legOffset = Math.sin(p.animTimer) * 4;
+    ctx.strokeStyle = "#582";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 2, y + 2);
+    ctx.lineTo(x - 2 - legOffset, y + 6);
+    ctx.moveTo(x + 2, y + 2);
+    ctx.lineTo(x + 2 + legOffset, y + 6);
+    ctx.stroke();
+
+    // Arms
+    ctx.strokeStyle = "#7a3";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x, y - 5);
+    ctx.lineTo(x + (p.vx > 0 ? 5 : -5), y - 2);
+    ctx.stroke();
+  } else if (p.state === "climbing") {
+    // Climbing up the stack
+    ctx.fillStyle = "#6a2";
+    ctx.fillRect(x - 3, y - 8, 6, 10);
+
+    // Climbing alternating arms
+    const armStep = Math.sin(p.animTimer) * 4;
+    ctx.strokeStyle = "#8b4";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 3, y - 4);
+    ctx.lineTo(x - 6, y - 10 + armStep);
+    ctx.moveTo(x + 3, y - 4);
+    ctx.lineTo(x + 6, y - 10 - armStep);
+    ctx.stroke();
+
+    // Climbing alternating legs
+    const legStep = Math.sin(p.animTimer) * 3;
+    ctx.strokeStyle = "#471";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 2, y + 2);
+    ctx.lineTo(x - 3, y + 5 - legStep);
+    ctx.moveTo(x + 2, y + 2);
+    ctx.lineTo(x + 3, y + 5 + legStep);
+    ctx.stroke();
+  } else if (p.state === "stacked") {
+    // Stacked trooper
+    ctx.fillStyle = "#6a2";
+    ctx.fillRect(x - 3, y - 8, 6, 10);
+
+    // Legs standing firm
+    ctx.strokeStyle = "#471";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 2, y + 2);
+    ctx.lineTo(x - 3, y + 5);
+    ctx.moveTo(x + 2, y + 2);
+    ctx.lineTo(x + 3, y + 5);
+    ctx.stroke();
+
+    // Arms raised / holding next level
+    ctx.strokeStyle = "#8b4";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 3, y - 4);
+    ctx.lineTo(x - 7, y - 11);
+    ctx.moveTo(x + 3, y - 4);
+    ctx.lineTo(x + 7, y - 11);
+    ctx.stroke();
+  }
+}
+
+// LOOP
+function loop(timestamp) {
+  const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+  lastTime = timestamp;
+
+  if (running) {
+    update(dt);
+  }
+  draw();
+
+  if (running) {
+    requestAnimationFrame(loop);
+  }
+}
+</script>
+</body>
+</html>
