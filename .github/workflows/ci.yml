@@ -1,0 +1,71 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Target host for the live game. The SSH credential itself stays in a repo
+  # secret (DEPLOY_SSH_KEY) so nothing sensitive lives in this file.
+  DEPLOY_HOST: 52.24.151.9
+  DEPLOY_USER: ubuntu
+  DEPLOY_PATH: /var/www/html/sabotage
+  PUBLIC_BASE_URL: https://www.maliaplace.com
+
+jobs:
+  test:
+    name: Playwright tests (chromium)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright browser + system deps
+        run: npx playwright install --with-deps chromium
+      - name: Run tests
+        run: npm test
+      - name: Upload Playwright artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: test-results/
+          if-no-files-found: ignore
+
+  deploy:
+    name: Deploy to maliaplace.com/sabotage
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+      - name: Deploy to server and health-check
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          if [ -z "$DEPLOY_SSH_KEY" ]; then
+            echo "::notice::DEPLOY_SSH_KEY secret is not set on this repository — skipping deploy."
+            echo "Enable it under Repo → Settings → Secrets and variables → Actions, then re-run the workflow."
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          rsync -avz -e "ssh -i ~/.ssh/id_ed25519" \
+            index.html "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+          echo "--- Post-deploy health check ---"
+          curl --fail --silent --location --retry 5 "$PUBLIC_BASE_URL/sabotage/" | grep -q "SABOTAGE"
+          echo "Deployed and verified at $PUBLIC_BASE_URL/sabotage/"

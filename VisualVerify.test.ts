@@ -7,7 +7,7 @@ test('Comprehensive Sabotage Feature Verification', async ({ page }) => {
 
   // 1. Verify overlay is visible
   await expect(page.locator('#overlay')).toBeVisible();
-  await page.screenshot({ path: '/home/brad/sabotage/screenshot_start.png' });
+  await page.screenshot({ path: path.join(__dirname, 'screenshot_start.png') });
 
   // 2. Start game
   await page.click('#start-btn');
@@ -56,7 +56,7 @@ test('Comprehensive Sabotage Feature Verification', async ({ page }) => {
   console.log(`Shots fired by holding mouse: ${shotsFiredMouse}`);
   expect(shotsFiredMouse).toBeGreaterThanOrEqual(2);
 
-  await page.screenshot({ path: '/home/brad/sabotage/screenshot_desktop_gameplay.png' });
+  await page.screenshot({ path: path.join(__dirname, 'screenshot_desktop_gameplay.png') });
 
   // 6. Test Paratrooper Walking, Stacking, and 3-Stack Game Over
   // Reset game state for controlled test
@@ -138,7 +138,7 @@ test('Comprehensive Sabotage Feature Verification', async ({ page }) => {
   const runningAfter2 = await page.evaluate(() => (window as any).running);
   expect(runningAfter2).toBe(true); // Game does NOT end on 2nd stack!
 
-  await page.screenshot({ path: '/home/brad/sabotage/screenshot_paratrooper_stacking.png' });
+  await page.screenshot({ path: path.join(__dirname, 'screenshot_paratrooper_stacking.png') });
 
   // Spawn trooper 3 on left side and step -> Trooper 3 should enter CLIMBING state (game continues while climbing)
   await page.evaluate(() => {
@@ -169,7 +169,7 @@ test('Comprehensive Sabotage Feature Verification', async ({ page }) => {
   console.log(`Running while trooper 3 is climbing: ${runningWhileClimbing}`);
   expect(runningWhileClimbing).toBe(true); // Game MUST STILL BE RUNNING while he climbs!
 
-  await page.screenshot({ path: '/home/brad/sabotage/screenshot_trooper3_climbing.png' });
+  await page.screenshot({ path: path.join(__dirname, 'screenshot_trooper3_climbing.png') });
 
   // Advance time so Trooper 3 climbs all the way to the top (y <= groundY - 33)
   await page.evaluate(() => {
@@ -188,7 +188,7 @@ test('Comprehensive Sabotage Feature Verification', async ({ page }) => {
   console.log(`Game over message: ${gameOverText}`);
   expect(gameOverText).toContain('Three paratroopers stacked up');
 
-  await page.screenshot({ path: '/home/brad/sabotage/screenshot_game_over_3stack.png' });
+  await page.screenshot({ path: path.join(__dirname, 'screenshot_game_over_3stack.png') });
 
   // 7. Test Shooting Parachute Canopy (Man freefalls to death) vs Shooting Man Directly
   await page.evaluate(() => {
@@ -235,7 +235,7 @@ test('Comprehensive Sabotage Feature Verification', async ({ page }) => {
   expect(chuteHitPara.vy).toBe(300);
 
   // Take screenshot of panicked freefalling trooper
-  await page.screenshot({ path: '/home/brad/sabotage/screenshot_freefalling_trooper.png' });
+  await page.screenshot({ path: path.join(__dirname, 'screenshot_freefalling_trooper.png') });
 
   // 8. Test Ground Trooper Immunity to Gunfire
   await page.evaluate(() => {
@@ -269,7 +269,7 @@ test('Comprehensive Sabotage Feature Verification', async ({ page }) => {
   });
 
   // Take screenshot showing shell passing through ground trooper
-  await page.screenshot({ path: '/home/brad/sabotage/screenshot_ground_immunity.png' });
+  await page.screenshot({ path: path.join(__dirname, 'screenshot_ground_immunity.png') });
 
   const walkingTrooperAfterShell = await page.evaluate(() => (window as any).paratroopers[0]);
   console.log('Walking trooper after shell collision step:', walkingTrooperAfterShell);
@@ -360,5 +360,5 @@ test('Comprehensive Sabotage Feature Verification', async ({ page }) => {
   expect(shotsMobileFire).toBeGreaterThanOrEqual(2);
 
   // Mobile screenshot
-  await page.screenshot({ path: '/home/brad/sabotage/screenshot_mobile.png' });
+  await page.screenshot({ path: path.join(__dirname, 'screenshot_mobile.png') });
 });

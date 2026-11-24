@@ -239,10 +239,32 @@ const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 const wrap = document.getElementById("canvas-wrap");
 
-let W, H;
+// Fixed virtual playfield: all gameplay math (speeds, distances, hit radii,
+// sprite sizes) is in "virtual pixels". The renderer maps this virtual
+// space to the visible viewport with one uniform scale + letterbox, so
+// difficulty is identical on every screen size (a 390px phone and a 4K
+// monitor resolve the same geometry in the same virtual unit).
+const VW = 720;   // virtual width  (3:2 aspect, friendly to mobile + desktop)
+const VH = 480;   // virtual height
+
+let W, H;          // game-space, always equal to VW / VH
+let cssW, cssH;    // visible viewport in CSS pixels
+let dpr = 1;       // device pixel ratio (retina sharpness)
+let scale = 1;     // uniform scale: virtual -> CSS px
+let offsetX = 0;   // letterbox offset, CSS px
+let offsetY = 0;   // letterbox offset, CSS px
+
 function resize() {
-  W = canvas.width = wrap.clientWidth;
-  H = canvas.height = wrap.clientHeight;
+  cssW = wrap.clientWidth;
+  cssH = wrap.clientHeight;
+  dpr = window.devicePixelRatio || 1;
+  scale = Math.min(cssW / VW, cssH / VH);
+  offsetX = (cssW - VW * scale) / 2;
+  offsetY = (cssH - VH * scale) / 2;
+  canvas.width = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
+  W = VW;
+  H = VH;
 }
 resize();
 window.addEventListener("resize", resize);
@@ -390,7 +412,15 @@ let isFireBtnDown = false;
 // Expose state and controls for test automation and debugging
 Object.defineProperty(window, 'W', { get: () => W, set: v => W = v });
 Object.defineProperty(window, 'H', { get: () => H, set: v => H = v });
+Object.defineProperty(window, 'VW', { get: () => VW });
+Object.defineProperty(window, 'VH', { get: () => VH });
 Object.defineProperty(window, 'groundY', { get: () => H * TURRET_BASE_Y_RATIO });
+Object.defineProperty(window, 'scale', { get: () => scale });
+Object.defineProperty(window, 'offsetX', { get: () => offsetX });
+Object.defineProperty(window, 'offsetY', { get: () => offsetY });
+Object.defineProperty(window, 'cssW', { get: () => cssW });
+Object.defineProperty(window, 'cssH', { get: () => cssH });
+Object.defineProperty(window, 'dpr', { get: () => dpr });
 Object.defineProperty(window, 'running', { get: () => running, set: v => running = v });
 Object.defineProperty(window, 'score', { get: () => score, set: v => score = v });
 Object.defineProperty(window, 'turretAngle', { get: () => turretAngle, set: v => turretAngle = v });
@@ -527,11 +557,12 @@ function explode(x, y, size, color) {
 function updateAimFromCoords(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
   if (rect.width === 0 || rect.height === 0) return;
-  const mx = (clientX - rect.left) * (canvas.width / rect.width);
-  const my = (clientY - rect.top) * (canvas.height / rect.height);
-  
-  const dx = mx - turretX;
-  const dy = my - turretY;
+  // Input boundary: convert viewport CSS pixels → fixed virtual field.
+  const vx = (clientX - rect.left - offsetX) / scale;
+  const vy = (clientY - rect.top - offsetY) / scale;
+
+  const dx = vx - turretX;
+  const dy = vy - turretY;
   const angle = Math.atan2(dy, dx);
   // Clamp above ground level: -Math.PI + 0.15 rad to -0.15 rad
   turretAngle = Math.max(-Math.PI + 0.15, Math.min(-0.15, angle));
@@ -1077,7 +1108,16 @@ function update(dt) {
 
 // DRAW
 function draw() {
-  ctx.clearRect(0, 0, W, H);
+  // Identity transform: clear the whole backing buffer and paint the
+  // letterbox background (matches the body black) before scene draw.
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Apply the uniform virtual-field transform so everything below draws
+  // in VW × VH game-space pixels and the renderer scales to the viewport.
+  ctx.setTransform(scale * dpr, 0, 0, scale * dpr, offsetX * dpr, offsetY * dpr);
 
   // Sky gradient (night)
   const sky = ctx.createLinearGradient(0, 0, 0, H);
