@@ -11,11 +11,13 @@ import path from 'path';
  *     is NO `#mute-btn`, NO `isMuted`, and NO 'm' key binding.
  *   - Fire: hold SPACE / mouse / canvas-touch via `fireHeld`; there is NO
  *     `#btn-fire`. `fire()` costs 1 score point and pushes one shell per call.
- *   - Rules: shells hit ONLY airborne (`state === "falling"`) paras. Shoot the
- *     canopy → loses chute → freefalls → splats on the ground. Grounded
- *     (walking/stacked) paras are shell-immune. Bombs that hit the ground kill
- *     nearby grounded paras. 3 stacked on EITHER side = game over
- *     ("Paratroopers stacked 3 high on the … side!").
+ *   - Rules (original Sabotage): shells hit ONLY airborne (`state === "falling"`)
+ *     paras — shoot the canopy and they drop fast and SPLAT. Landed soldiers
+ *     (`state "grounded"`) stand where they land and are shell-immune. Two ways
+ *     they end the game: (A) 3 piled in ONE column right by the turret ("a
+ *     3-high pillar … reaches over") , or (B) 4 on ONE side once the sky is clear
+ *     → the squad forms a "human pyramid" that climbs over it. Ground bombs still
+ *     kill nearby troopers.
  *
  * Game state (W, H, scale, offsetX, offsetY, cssW, cssH, turretX, groundY,
  * running, score, shells, helicopters, jets, paratroopers, bombs, stackLeft,
@@ -116,51 +118,79 @@ test('aiming re-aims the turret toward the cursor', async ({ page }) => {
   expect(angle).toBeLessThan(-Math.PI / 2);
 });
 
-test('3 stacked on one side ends the game', async ({ page }) => {
+test('a 3-high pillar beside the turret reaches over it (game over)', async ({ page }) => {
   await page.goto(URL);
   await cleanState(page);
-  const geom = await page.evaluate(() => ({
-    turretX: (window as any).turretX,
-    groundY: (window as any).groundY,
-  }));
-  const landY = geom.groundY - 5;
-  const leftX = geom.turretX - 55; // getStackX(-1), one step from target
+  const res = await page.evaluate(() => {
+    const turretX = (window as any).turretX;
+    const groundY = (window as any).groundY;
+    // 3 soldiers stacked in one column, within reach of the turret.
+    const x = turretX - 45;
+    for (let i = 0; i < 3; i++) {
+      const p = { x, y: groundY - 5 - i * 16, vy: 0, hasChute: false, chuteDeployed: true, state: 'grounded', side: -1 };
+      (window as any).paratroopers.push(p);
+      (window as any).stackLeft.push(p);
+    }
+    (window as any).update(0.016);
+    return { running: (window as any).running };
+  });
+  console.log('3-pillar:', res);
+  expect(res.running).toBe(false);
 
-  const dropTrooper = async () =>
-    page.evaluate(({ landY, leftX }: any) => {
-      (window as any).paratroopers.push({
-        x: leftX, y: landY, vy: 0,
-        hasChute: false, chuteDeployed: true, state: 'walking', side: -1,
-      });
-      (window as any).update(0.05);
-      return {
-        left: (window as any).stackLeft.length,
-        running: (window as any).running,
-      };
-    }, { landY, leftX });
-
-  const a = await dropTrooper();
-  console.log('after trooper 1:', a);
-  expect(a.left).toBe(1);
-  expect(a.running).toBe(true);
-
-  const b = await dropTrooper();
-  console.log('after trooper 2:', b);
-  expect(b.left).toBe(2);
-  expect(b.running).toBe(true);
-
-  const c = await dropTrooper();
-  console.log('after trooper 3:', c);
-  expect(c.left).toBe(3);
-  expect(c.running).toBe(false); // game over only now
-
-  // endGame() reveals the overlay shortly after, with the reason.
   await page.waitForTimeout(1100);
-  await expect(page.locator('#overlay')).toBeVisible();
   const reason = (await page.locator('#overlay h2').textContent()) || '';
   console.log('game over reason:', reason);
-  expect(reason).toContain('stacked 3 high');
+  expect(reason).toContain('pillar');
   expect(reason).toContain('left');
+});
+
+test('4 on one side, sky clear -> the squad forms a human pyramid (game over)', async ({ page }) => {
+  await page.goto(URL);
+  await cleanState(page);
+  const res = await page.evaluate(() => {
+    const turretX = (window as any).turretX;
+    const groundY = (window as any).groundY;
+    // 4 scattered soldiers (no 3-pillar, none within reach) on the LEFT; sky clear.
+    const xs = [turretX - 180, turretX - 130, turretX - 95, turretX - 160];
+    for (const x of xs) {
+      const p = { x, y: groundY - 5, vy: 0, hasChute: false, chuteDeployed: true, state: 'grounded', side: -1 };
+      (window as any).paratroopers.push(p);
+      (window as any).stackLeft.push(p);
+    }
+    let guard = 0;
+    while ((window as any).running && guard++ < 400) (window as any).update(0.05);
+    return { running: (window as any).running };
+  });
+  console.log('pyramid:', res);
+  expect(res.running).toBe(false);
+
+  await page.waitForTimeout(1100);
+  const reason = (await page.locator('#overlay h2').textContent()) || '';
+  console.log('game over reason:', reason);
+  expect(reason).toContain('pyramid');
+});
+
+test('the pyramid waits while a soldier is still in the air', async ({ page }) => {
+  await page.goto(URL);
+  await cleanState(page);
+  const res = await page.evaluate(() => {
+    const turretX = (window as any).turretX;
+    const groundY = (window as any).groundY;
+    const xs = [turretX - 180, turretX - 130, turretX - 95, turretX - 160];
+    for (const x of xs) {
+      const p = { x, y: groundY - 5, vy: 0, hasChute: false, chuteDeployed: true, state: 'grounded', side: -1 };
+      (window as any).paratroopers.push(p);
+      (window as any).stackLeft.push(p);
+    }
+    // One para still descending keeps the "sky clear" check false -> hold position.
+    (window as any).paratroopers.push({ x: 150, y: 40, vy: 55, hasChute: true, chuteDeployed: true, state: 'falling', side: 0 });
+    for (let i = 0; i < 24; i++) (window as any).update(0.05); // ~1.2s of simulation
+    const air = (window as any).paratroopers.find((p: any) => p.state === 'falling');
+    return { running: (window as any).running, airStillFalling: !!air };
+  });
+  console.log('blocked pyramid:', res);
+  expect(res.airStillFalling).toBe(true);
+  expect(res.running).toBe(true);
 });
 
 test('shooting the canopy drops the chute -> freefall velocity', async ({ page }) => {
@@ -195,21 +225,21 @@ test('a freefalling (no-chute) para splats on the ground', async ({ page }) => {
   expect(res).toBe(0);
 });
 
-test('grounded (walking) paras are immune to shells', async ({ page }) => {
+test('grounded soldiers are immune to shells', async ({ page }) => {
   await page.goto(URL);
   await cleanState(page);
   const res = await page.evaluate(() => {
     const groundY = (window as any).groundY;
     const turretX = (window as any).turretX;
-    (window as any).paratroopers.push({ x: turretX - 120, y: groundY - 5, vy: 0, hasChute: false, chuteDeployed: true, state: 'walking', side: -1 });
+    (window as any).paratroopers.push({ x: turretX - 120, y: groundY - 5, vy: 0, hasChute: false, chuteDeployed: true, state: 'grounded', side: -1 });
     (window as any).shells.push({ x: turretX - 120, y: groundY - 5, vx: 100, vy: 0 });
     (window as any).update(0.016);
     const p = (window as any).paratroopers[0];
     return { count: (window as any).paratroopers.length, state: p ? p.state : null };
   });
-  console.log('walking para after shell pass:', res);
+  console.log('grounded para after shell pass:', res);
   expect(res.count).toBe(1);
-  expect(res.state).toBe('walking');
+  expect(res.state).toBe('grounded');
 });
 
 test('a ground bomb kills nearby grounded paras', async ({ page }) => {
@@ -218,7 +248,7 @@ test('a ground bomb kills nearby grounded paras', async ({ page }) => {
   const res = await page.evaluate(() => {
     const groundY = (window as any).groundY;
     const turretX = (window as any).turretX;
-    (window as any).paratroopers.push({ x: turretX - 40, y: groundY - 5, vy: 0, hasChute: false, chuteDeployed: true, state: 'stacked', side: -1 });
+    (window as any).paratroopers.push({ x: turretX - 40, y: groundY - 5, vy: 0, hasChute: false, chuteDeployed: true, state: 'grounded', side: -1 });
     (window as any).bombs.push({ x: turretX - 40, y: groundY, vx: 0, vy: 100 });
     (window as any).update(0.05);
     return (window as any).paratroopers.length;

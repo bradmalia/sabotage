@@ -57,8 +57,8 @@ canvas{display:block;touch-action:none}
   <div class="hud-item"><div class="hud-label">Score</div><div class="hud-value" id="score">0</div></div>
   <div class="hud-item"><div class="hud-label">Wave</div><div class="hud-value" id="wave">1</div></div>
   <div class="hud-item"><div class="hud-label">Phase</div><div class="hud-value" id="phase">HELO</div></div>
-  <div class="hud-item"><div class="hud-label">L-Stack</div><div class="hud-value" id="stackL">0/3</div></div>
-  <div class="hud-item"><div class="hud-label">R-Stack</div><div class="hud-value" id="stackR">0/3</div></div>
+  <div class="hud-item"><div class="hud-label">L-Troops</div><div class="hud-value" id="stackL">0/4</div></div>
+  <div class="hud-item"><div class="hud-label">R-Troops</div><div class="hud-value" id="stackR">0/4</div></div>
   <button id="sound-btn" onclick="toggleSound()">🔊</button>
 </div>
 <div id="canvas-wrap">
@@ -67,8 +67,8 @@ canvas{display:block;touch-action:none}
     <h1>SABOTAGE</h1>
     <h2>Apple II · 1981 · Mark Allen</h2>
     <p>Defend your turret from helicopters, paratroopers &amp; jets.</p>
-    <p>Paras stack on each side — 3 high on EITHER side = game over!</p>
-    <p>Shoot their chute → they fall fast and DIE. Only airborne targets are valid.</p>
+    <p>3 soldiers piled in one pillar by the turret, or 4 on a side once the sky clears — your turret's gone.</p>
+    <p>Shoot their chute → they drop fast and SPLAT. Landed soldiers are safe from your shells — only the air matters.</p>
     <p class="controls">
       Desktop: ← → aim · Hold SPACE rapid fire<br>
       Mobile: Tap/hold where to shoot · Auto-aims for you
@@ -147,10 +147,18 @@ const FIRE_RATE=0.12;
 const SHELL_SPEED=500,HELO_SPD=80,JET_SPD=200;
 const PARA_CHUTE=55,PARA_NOC=280;
 const WALK_SPEED=50;
-const STACK_OFFSET=55;
+const STACK_OFFSET=55;          // offset from the turret where troopers pile / attack
+const PARA_H=16;               // vertical step when troopers stack in a pillar
+const COLUMN_TOL=16;           // "same column" x-tolerance (px) for a pillar
+const TOWER_NEEDED=3;          // 3 in one pillar by the turret => reached over
+const TURRET_REACH=70;         // a pillar must be this close to the turret to threaten it
+const PYRAMID_NEEDED=4;        // 4 on one side (+ clear sky) => human pyramid assault
+const ASSAULT_SPEED=70;        // px/s the squad moves during the pyramid assault
+const ASSAULT_FORM=1.0;        // s, max time to form & climb before the turret falls
 const BOMB_CHANCE=0.008,W_HELO=5,W_JET=4,REST=3,TBY=0.92;
 const PARA_MIN_X=40,PARA_MAX_X_MARGIN=40;
 const BOMB_KILL_RADIUS=30;
+var assault=null;              // active pyramid-assault animation state
 var groundY=VH*TBY;
 
 function paraMaxX(){return W-PARA_MAX_X_MARGIN;}
@@ -162,6 +170,7 @@ function reset(){
   stackLeft=[];stackRight=[];
   waveTimer=0;heloSpawnTimer=2;jetSpawnTimer=2;restTimer=0;
   waveMsg="";waveMsgTimer=0;fireHeld=false;fireCooldown=0;
+  assault=null;
 }
 
 function startGame(){
@@ -248,6 +257,18 @@ function removePara(p){
 }
 function getStackX(side){return turretX+side*STACK_OFFSET;}
 function getStackArray(side){return side<0?stackLeft:stackRight;}
+function skyClear(){
+  if(helicopters.length||jets.length) return false;
+  for(const p of paratroopers) if(p.state==="falling") return false;
+  return true;
+}
+function nearPillarHeight(side){
+  const arr=getStackArray(side).filter(p=>Math.abs(p.x-turretX)<=TURRET_REACH);
+  if(arr.length===0) return 0;
+  let best=1;
+  for(const p of arr){ let c=0; for(const o of arr){ if(Math.abs(o.x-p.x)<=COLUMN_TOL) c++; } if(c>best)best=c; }
+  return best;
+}
 
 // ============ UPDATE ============
 function update(dt){
@@ -334,10 +355,17 @@ function update(dt){
 
     if(p.y>=H*TBY-5){
       if(p.hasChute){
-        p.state="walking";
-        p.y=H*TBY-5;
+        // Landed soldiers stand put where they come down. If that column is
+        // already occupied they stack on the trooper below (building a pillar).
+        p.state="grounded";
         p.side=(p.x<turretX)?-1:1;
-        AudioEngine.play("paraHit");
+        const arr=getStackArray(p.side);
+        p.y=H*TBY-5;
+        let minY=null;
+        for(const o of arr){ if(Math.abs(o.x-p.x)<=COLUMN_TOL){ if(minY==null||o.y<minY) minY=o.y; } }
+        if(minY!=null){ p.y=minY-PARA_H; AudioEngine.play("paraStack"); }
+        else AudioEngine.play("paraHit");
+        arr.push(p);
       } else {
         boom(p.x,H*TBY-5,20,"#a44","paraDeath");
         paratroopers.splice(i,1);
@@ -345,29 +373,38 @@ function update(dt){
     }
   }
 
-  // Step 3: Walking paras walk to their side's stack
-  for(let i=paratroopers.length-1;i>=0;i--){
-    const p=paratroopers[i];
-    if(p.state!=="walking") continue;
+  // Step 3: Grounded soldiers threaten you the two original Sabotage ways —
+  //   A) a 3-high pillar right by the turret (the top soldier reaches over it);
+  //   B) 4 soldiers on one side, once the sky is clear: they walk in, form a
+  //      human pyramid, and climb over the turret.
+  if(nearPillarHeight(-1)>=TOWER_NEEDED){ endGame("A 3-high pillar of soldiers reached over your turret on the left!"); return; }
+  if(nearPillarHeight(1)>=TOWER_NEEDED){  endGame("A 3-high pillar of soldiers reached over your turret on the right!"); return; }
 
-    const targetX=getStackX(p.side);
-    const dx=targetX-p.x;
-    const step=WALK_SPEED*dt;
-
-    if(Math.abs(dx)<=step){
-      p.x=targetX;
-      p.state="stacked";
-      const arr=getStackArray(p.side);
-      p.stackIndex=arr.length;
-      p.y=H*TBY-5-p.stackIndex*18;
-      arr.push(p);
+  if(!assault && running && (stackLeft.length>=PYRAMID_NEEDED||stackRight.length>=PYRAMID_NEEDED)){
+    const side=stackLeft.length>=PYRAMID_NEEDED?-1:1;
+    if(skyClear()){
+      const arr=getStackArray(side).slice().sort((a,b)=>a.x-b.x);
+      arr.forEach(p=>{ if(p.state==="grounded") p.state="assault"; });
+      const base=turretX+side*STACK_OFFSET*0.55;
+      arr.forEach((p,idx)=>{ p.tgx=base; p.tgy=(H*TBY-5)-idx*PARA_H; });
+      assault={side,t:0,dur:ASSAULT_FORM};
+      waveMsg="⚠ PYRAMID ASSAULT "+(side<0?"LEFT":"RIGHT")+"!";waveMsgTimer=1.4;
       AudioEngine.play("paraStack");
-      if(arr.length>=3){
-        endGame("Paratroopers stacked 3 high on the "+(p.side<0?"left":"right")+" side!");
-        return;
-      }
-    } else {
-      p.x+=Math.sign(dx)*step;
+    }
+  }
+  if(assault&&running){
+    const arr=getStackArray(assault.side);
+    let settled=true;
+    for(const p of arr){
+      if(p.tgx==null){ settled=false; continue; }
+      const dx=p.tgx-p.x,dy=p.tgy-p.y,step=ASSAULT_SPEED*dt;
+      if(Math.abs(dx)>step){ p.x+=Math.sign(dx)*step; settled=false; } else p.x=p.tgx;
+      if(Math.abs(dy)>step){ p.y+=Math.sign(dy)*step; settled=false; } else p.y=p.tgy;
+    }
+    assault.t+=dt;
+    if((settled&&assault.t>0.2)||assault.t>=assault.dur){
+      endGame("Four soldiers formed a human pyramid "+(assault.side<0?"on the left":"on the right")+" and climbed over your turret!");
+      return;
     }
   }
 
@@ -445,11 +482,11 @@ function update(dt){
   document.getElementById("wave").textContent=wave;
   document.getElementById("phase").textContent=phase.toUpperCase();
   const sL=document.getElementById("stackL");
-  sL.textContent=stackLeft.length+"/3";
-  sL.className="hud-value"+(stackLeft.length>=2?" danger":"");
+  sL.textContent=stackLeft.length+"/"+PYRAMID_NEEDED;
+  sL.className="hud-value"+(stackLeft.length>=PYRAMID_NEEDED-1?" danger":"");
   const sR=document.getElementById("stackR");
-  sR.textContent=stackRight.length+"/3";
-  sR.className="hud-value"+(stackRight.length>=2?" danger":"");
+  sR.textContent=stackRight.length+"/"+PYRAMID_NEEDED;
+  sR.className="hud-value"+(stackRight.length>=PYRAMID_NEEDED-1?" danger":"");
 }
 
 // ============ DRAW ============
@@ -472,9 +509,8 @@ function draw(){
   ctx.strokeStyle="#2a4a2a";ctx.lineWidth=2;
   ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(W,gy);ctx.stroke();
 
-  paratroopers.forEach(p=>{if(p.state==="walking") drawPara(p.x,p.y,"walking");});
-  stackLeft.forEach(p=>{drawPara(p.x,p.y,"stacked");});
-  stackRight.forEach(p=>{drawPara(p.x,p.y,"stacked");});
+  stackLeft.forEach(p=>{drawPara(p.x,p.y,p.state==="assault"?"assault":"grounded");});
+  stackRight.forEach(p=>{drawPara(p.x,p.y,p.state==="assault"?"assault":"grounded");});
   paratroopers.forEach(p=>{if(p.state==="falling") drawPara(p.x,p.y,p.hasChute?"airborne":"nogliding");});
 
   helicopters.forEach(drawHelo);
@@ -493,13 +529,13 @@ function draw(){
 
   drawTurret();
 
-  if(stackLeft.length>=2){
-    ctx.fillStyle="rgba(255,50,50,0.8)";ctx.font="bold 12px 'Courier New'";ctx.textAlign="center";
-    ctx.fillText("⚠"+stackLeft.length+"/3",getStackX(-1),turretY-5-stackLeft.length*18-14);
+  if(stackLeft.length>=PYRAMID_NEEDED-1){
+    ctx.fillStyle="rgba(255,50,50,0.9)";ctx.font="bold 12px 'Courier New'";ctx.textAlign="center";
+    ctx.fillText("⚠"+stackLeft.length+"/"+PYRAMID_NEEDED,getStackX(-1),turretY-8);
   }
-  if(stackRight.length>=2){
-    ctx.fillStyle="rgba(255,50,50,0.8)";ctx.font="bold 12px 'Courier New'";ctx.textAlign="center";
-    ctx.fillText("⚠"+stackRight.length+"/3",getStackX(1),turretY-5-stackRight.length*18-14);
+  if(stackRight.length>=PYRAMID_NEEDED-1){
+    ctx.fillStyle="rgba(255,50,50,0.9)";ctx.font="bold 12px 'Courier New'";ctx.textAlign="center";
+    ctx.fillText("⚠"+stackRight.length+"/"+PYRAMID_NEEDED,getStackX(1),turretY-8);
   }
 
   explosions.forEach(e=>{
@@ -600,7 +636,7 @@ function drawPara(x,y,mode){
     ctx.moveTo(x-3,y-4);ctx.lineTo(x-5,y+2+legSwing*0.5);
     ctx.moveTo(x+3,y-4);ctx.lineTo(x+5,y+2-legSwing*0.5);
     ctx.stroke();
-  } else if(mode==="stacked"){
+  } else if(mode==="stacked"||mode==="grounded"){
     ctx.fillStyle="#5a4";
     ctx.fillRect(x-4,y+4,3,4);
     ctx.fillRect(x+1,y+4,3,4);
