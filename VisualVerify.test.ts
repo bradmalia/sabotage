@@ -1,364 +1,244 @@
 import { test, expect } from '@playwright/test';
 import path from 'path';
 
-test('Comprehensive Sabotage Feature Verification', async ({ page }) => {
-  const filePath = 'file://' + path.resolve(__dirname, 'index.html');
-  await page.goto(filePath);
+/**
+ * VisualVerify for the maliaplace "Sabotage 1981 · Apple II · Mark Allen" build
+ * that now lives in index.html (the preferred, smaller build).
+ *
+ * This build's ACTUAL rules (verified against its source) differ from the old
+ * sabota build the previous test targeted:
+ *   - Sound: `#sound-btn` (+ `.muted` class) toggled by `toggleSound()`; there
+ *     is NO `#mute-btn`, NO `isMuted`, and NO 'm' key binding.
+ *   - Fire: hold SPACE / mouse / canvas-touch via `fireHeld`; there is NO
+ *     `#btn-fire`. `fire()` costs 1 score point and pushes one shell per call.
+ *   - Rules: shells hit ONLY airborne (`state === "falling"`) paras. Shoot the
+ *     canopy → loses chute → freefalls → splats on the ground. Grounded
+ *     (walking/stacked) paras are shell-immune. Bombs that hit the ground kill
+ *     nearby grounded paras. 3 stacked on EITHER side = game over
+ *     ("Paratroopers stacked 3 high on the … side!").
+ *
+ * Game state (W, H, scale, offsetX, offsetY, cssW, cssH, turretX, groundY,
+ * running, score, shells, helicopters, jets, paratroopers, bombs, stackLeft,
+ * stackRight) is exposed as live window properties (top-level `var`) and the
+ * functions (reset, startGame, update, fire, aimAndFire, toggleSound) are
+ * top-level functions — all reachable over `window.*` for white-box testing.
+ */
+const URL = 'file://' + path.resolve(__dirname, 'index.html');
 
-  // 1. Verify overlay is visible
+async function cleanState(page: any) {
+  await page.evaluate(() => {
+    (window as any).reset();
+    (window as any).running = true;
+    (window as any).helicopters = [];
+    (window as any).jets = [];
+    (window as any).paratroopers = [];
+    (window as any).bombs = [];
+    (window as any).shells = [];
+  });
+}
+
+test('start flow sets running state & hides the overlay', async ({ page }) => {
+  await page.goto(URL);
   await expect(page.locator('#overlay')).toBeVisible();
-  await page.screenshot({ path: path.join(__dirname, 'screenshot_start.png') });
+  await expect(page.locator('#overlay h1')).toHaveText('SABOTAGE');
+  await expect(page.locator('button.start-btn')).toHaveText(/START MISSION/);
+  expect(await page.evaluate(() => (window as any).running)).toBe(false);
 
-  // 2. Start game
-  await page.click('#start-btn');
+  await page.locator('button.start-btn').click();
   await expect(page.locator('#overlay')).toBeHidden();
-  await page.waitForTimeout(200);
+  expect(await page.evaluate(() => (window as any).running)).toBe(true);
+  // Geometry sanity on the fixed virtual playfield.
+  expect(await page.evaluate(() => (window as any).W)).toBe(720);
+  expect(await page.evaluate(() => (window as any).H)).toBe(480);
+  expect(await page.evaluate(() => (window as any).turretX)).toBe(360);
+  expect(await page.evaluate(() => (window as any).groundY)).toBeCloseTo(480 * 0.92, 3);
+});
 
-  // 3. Test Mute Button and 'M' Key
-  const muteBtn = page.locator('#mute-btn');
-  await expect(muteBtn).toHaveText(/AUDIO/);
-  await muteBtn.click();
-  await expect(muteBtn).toHaveText(/MUTED/);
-  const isMutedAfterClick = await page.evaluate(() => (window as any).isMuted);
-  expect(isMutedAfterClick).toBe(true);
+test('mute toggles via #sound-btn (no m-key, no isMuted)', async ({ page }) => {
+  await page.goto(URL);
+  const btn = page.locator('#sound-btn');
+  // Starts enabled.
+  expect(await btn.textContent()).not.toContain('🔇');
+  expect(((await btn.getAttribute('class')) || '')).not.toContain('muted');
+  await btn.click();
+  expect(await btn.textContent()).toContain('🔇');
+  expect(((await btn.getAttribute('class')) || '')).toContain('muted');
+  await btn.click();
+  expect(await btn.textContent()).not.toContain('🔇');
+  expect(((await btn.getAttribute('class')) || '')).not.toContain('muted');
+});
 
-  // Press 'm' key to unmute
-  await page.keyboard.press('m');
-  await expect(muteBtn).toHaveText(/AUDIO/);
-  const isMutedAfterKey = await page.evaluate(() => (window as any).isMuted);
-  expect(isMutedAfterKey).toBe(false);
+test('fire() mechanics + hold-SPACE rapid fire', async ({ page }) => {
+  await page.goto(URL);
+  await page.locator('button.start-btn').click();
+  await page.waitForTimeout(120);
 
-  // 4. Test Holding Space for Rapid Fire
-  const scoreBeforeHoldSpace = await page.evaluate(() => (window as any).score);
+  // 1) fire() deterministically pushes exactly one shell per call.
+  const direct = await page.evaluate(() => {
+    (window as any).reset(); (window as any).running = true;
+    (window as any).shells = [];
+    const before = (window as any).shells.length;
+    for (let i = 0; i < 4; i++) (window as any).fire();
+    return { before, after: (window as any).shells.length };
+  });
+  console.log('direct fire() shells:', direct);
+  expect(direct.after - direct.before).toBe(4);
+
+  // 2) Holding SPACE (real key handler sets fireHeld) rapid-fires multiple shells.
+  await page.evaluate(() => { (window as any).shells = []; });
   await page.keyboard.down('Space');
-  await page.waitForTimeout(450); // Hold for ~450ms (~3-4 shots)
+  const hold = await page.evaluate(() => {
+    for (let i = 0; i < 8; i++) (window as any).update(0.05);
+    return (window as any).shells.length;
+  });
   await page.keyboard.up('Space');
-  await page.waitForTimeout(100);
+  console.log('hold-SPACE shells:', hold);
+  expect(hold).toBeGreaterThanOrEqual(2);
+});
 
-  const scoreAfterHoldSpace = await page.evaluate(() => (window as any).score);
-  const shotsFiredSpace = scoreBeforeHoldSpace - scoreAfterHoldSpace;
-  console.log(`Shots fired by holding space: ${shotsFiredSpace}`);
-  expect(shotsFiredSpace).toBeGreaterThanOrEqual(2);
+test('aiming re-aims the turret toward the cursor', async ({ page }) => {
+  await page.goto(URL);
+  await page.locator('button.start-btn').click();
+  await page.waitForTimeout(120);
 
-  // 5. Test Holding Mouse for Rapid Fire and Mouse Aiming
-  await page.mouse.move(250, 180);
-  const angleAimLeft = await page.evaluate(() => (window as any).turretAngle);
-  expect(angleAimLeft).toBeLessThan(-Math.PI / 2); // aiming top-left
-
-  const scoreBeforeHoldMouse = await page.evaluate(() => (window as any).score);
-  await page.mouse.down();
-  await page.waitForTimeout(450); // Hold mouse for ~450ms
-  await page.mouse.up();
-  await page.waitForTimeout(100);
-
-  const scoreAfterHoldMouse = await page.evaluate(() => (window as any).score);
-  const shotsFiredMouse = scoreBeforeHoldMouse - scoreAfterHoldMouse;
-  console.log(`Shots fired by holding mouse: ${shotsFiredMouse}`);
-  expect(shotsFiredMouse).toBeGreaterThanOrEqual(2);
-
-  await page.screenshot({ path: path.join(__dirname, 'screenshot_desktop_gameplay.png') });
-
-  // 6. Test Paratrooper Walking, Stacking, and 3-Stack Game Over
-  // Reset game state for controlled test
-  await page.evaluate(() => {
-    (window as any).reset();
-    (window as any).running = true;
-    (window as any).helicopters = [];
-    (window as any).jets = [];
-    (window as any).bombs = [];
-    (window as any).shells = [];
-    (window as any).paratroopers = [];
+  const angle = await page.evaluate(() => {
+    (window as any).reset(); (window as any).running = true;
+    const r = document.getElementById('c')!.getBoundingClientRect();
+    const scale = (window as any).scale, ox = (window as any).offsetX, oy = (window as any).offsetY;
+    // Aim at a point LEFT of and ABOVE the turret (virtual x=200, y=300).
+    const cx = r.left + ox + 200 * scale;
+    const cy = r.top + oy + 300 * scale;
+    (window as any).aimAndFire(cx, cy);
+    return (window as any).turretAngle;
   });
+  console.log('turret angle aiming top-left:', angle);
+  // Top-left means the angle sits past -PI/2 in the upper-left hemisphere.
+  expect(angle).toBeLessThan(-Math.PI / 2);
+});
 
-  // Spawn paratrooper 1 on left side near ground
-  await page.evaluate(() => {
-    const W = (window as any).W;
-    const H = (window as any).H;
-    const turretX = (window as any).turretX;
-    (window as any).paratroopers.push({
-      x: turretX - 100,
-      y: H * 0.92 - 5,
-      vy: 60,
-      vx: 38,
-      parachute: false,
-      state: "walking",
-      side: "left",
-      stackLevel: 0,
-      animTimer: 0
-    });
-  });
+test('3 stacked on one side ends the game', async ({ page }) => {
+  await page.goto(URL);
+  await cleanState(page);
+  const geom = await page.evaluate(() => ({
+    turretX: (window as any).turretX,
+    groundY: (window as any).groundY,
+  }));
+  const landY = geom.groundY - 5;
+  const leftX = geom.turretX - 55; // getStackX(-1), one step from target
 
-  // Let trooper 1 walk to turret
-  await page.waitForTimeout(1500); // 100px / 38px/s ~ 2.6s, or speed up simulation
-  await page.evaluate(() => {
-    // Advance time by 2.5s
-    for (let i = 0; i < 50; i++) {
+  const dropTrooper = async () =>
+    page.evaluate(({ landY, leftX }: any) => {
+      (window as any).paratroopers.push({
+        x: leftX, y: landY, vy: 0,
+        hasChute: false, chuteDeployed: true, state: 'walking', side: -1,
+      });
       (window as any).update(0.05);
-    }
-  });
+      return {
+        left: (window as any).stackLeft.length,
+        running: (window as any).running,
+      };
+    }, { landY, leftX });
 
-  const parasAfter1 = await page.evaluate(() => {
-    return (window as any).paratroopers.map((p: any) => ({ state: p.state, stackLevel: p.stackLevel, x: p.x, side: p.side }));
-  });
-  console.log('Paras after 1 walks:', parasAfter1);
-  expect(parasAfter1[0].state).toBe('stacked');
-  expect(parasAfter1[0].stackLevel).toBe(0);
-  const runningAfter1 = await page.evaluate(() => (window as any).running);
-  expect(runningAfter1).toBe(true); // Game does NOT end on 1st land/stack!
+  const a = await dropTrooper();
+  console.log('after trooper 1:', a);
+  expect(a.left).toBe(1);
+  expect(a.running).toBe(true);
 
-  // Spawn trooper 2 on left side and step
-  await page.evaluate(() => {
-    const turretX = (window as any).turretX;
-    const H = (window as any).H;
-    (window as any).paratroopers.push({
-      x: turretX - 28, // right at stack position
-      y: H * 0.92 - 5,
-      vy: 60,
-      vx: 38,
-      parachute: false,
-      state: "walking",
-      side: "left",
-      stackLevel: 0,
-      animTimer: 0
-    });
-    // Step simulation so Trooper 2 climbs to Level 1
-    for (let i = 0; i < 20; i++) {
-      (window as any).update(0.05);
-    }
-  });
+  const b = await dropTrooper();
+  console.log('after trooper 2:', b);
+  expect(b.left).toBe(2);
+  expect(b.running).toBe(true);
 
-  const parasAfter2 = await page.evaluate(() => {
-    return (window as any).paratroopers
-      .filter((p: any) => p.side === "left" && p.state === "stacked")
-      .map((p: any) => ({ state: p.state, stackLevel: p.stackLevel }));
-  });
-  console.log('Stacked on left after 2:', parasAfter2);
-  expect(parasAfter2.length).toBe(2);
-  expect(parasAfter2[1].stackLevel).toBe(1);
-  const runningAfter2 = await page.evaluate(() => (window as any).running);
-  expect(runningAfter2).toBe(true); // Game does NOT end on 2nd stack!
+  const c = await dropTrooper();
+  console.log('after trooper 3:', c);
+  expect(c.left).toBe(3);
+  expect(c.running).toBe(false); // game over only now
 
-  await page.screenshot({ path: path.join(__dirname, 'screenshot_paratrooper_stacking.png') });
+  // endGame() reveals the overlay shortly after, with the reason.
+  await page.waitForTimeout(1100);
+  await expect(page.locator('#overlay')).toBeVisible();
+  const reason = (await page.locator('#overlay h2').textContent()) || '';
+  console.log('game over reason:', reason);
+  expect(reason).toContain('stacked 3 high');
+  expect(reason).toContain('left');
+});
 
-  // Spawn trooper 3 on left side and step -> Trooper 3 should enter CLIMBING state (game continues while climbing)
-  await page.evaluate(() => {
-    const turretX = (window as any).turretX;
-    const H = (window as any).H;
-    (window as any).paratroopers.push({
-      x: turretX - 28,
-      y: H * 0.92 - 5,
-      vy: 60,
-      vx: 38,
-      parachute: false,
-      state: "walking",
-      side: "left",
-      stackLevel: 0,
-      animTimer: 0
-    });
-    // Step once: Trooper 3 touches stack base and starts climbing
-    (window as any).update(0.05);
-  });
-
-  const trooper3WhileClimbing = await page.evaluate(() => {
-    return (window as any).paratroopers.find((p: any) => p.side === "left" && p.stackLevel === 2);
-  });
-  console.log('Trooper 3 while climbing:', trooper3WhileClimbing);
-  expect(trooper3WhileClimbing.state).toBe('climbing');
-
-  const runningWhileClimbing = await page.evaluate(() => (window as any).running);
-  console.log(`Running while trooper 3 is climbing: ${runningWhileClimbing}`);
-  expect(runningWhileClimbing).toBe(true); // Game MUST STILL BE RUNNING while he climbs!
-
-  await page.screenshot({ path: path.join(__dirname, 'screenshot_trooper3_climbing.png') });
-
-  // Advance time so Trooper 3 climbs all the way to the top (y <= groundY - 33)
-  await page.evaluate(() => {
-    for (let i = 0; i < 35; i++) {
-      (window as any).update(0.05);
-    }
-  });
-
-  const runningAfterReachTop = await page.evaluate(() => (window as any).running);
-  const overlayVisible = await page.locator('#overlay').isVisible();
-  console.log(`Running after reaching top: ${runningAfterReachTop}, Overlay visible: ${overlayVisible}`);
-  expect(runningAfterReachTop).toBe(false); // Game OVER only when he reaches top!
-  expect(overlayVisible).toBe(true);
-
-  const gameOverText = await page.locator('#overlay h2').textContent();
-  console.log(`Game over message: ${gameOverText}`);
-  expect(gameOverText).toContain('Three paratroopers stacked up');
-
-  await page.screenshot({ path: path.join(__dirname, 'screenshot_game_over_3stack.png') });
-
-  // 7. Test Shooting Parachute Canopy (Man freefalls to death) vs Shooting Man Directly
-  await page.evaluate(() => {
-    (window as any).reset();
-    (window as any).running = true;
-    document.getElementById("overlay")?.classList.add("hidden");
-    (window as any).helicopters = [];
-    (window as any).jets = [];
-    (window as any).bombs = [];
-    (window as any).shells = [];
-    (window as any).paratroopers = [];
-
-    // Spawn falling paratrooper with open chute
-    (window as any).paratroopers.push({
-      x: 300,
-      y: 200,
-      vy: 60,
-      vx: 0,
-      parachute: true,
-      state: "falling",
-      side: null,
-      stackLevel: 0,
-      animTimer: 0
-    });
-
-    // Spawn shell aiming at the parachute canopy (y = 200 - 25 = 175)
-    (window as any).shells.push({
-      x: 300,
-      y: 175,
-      vx: 0,
-      vy: -100
-    });
-
-    // Run collision step
+test('shooting the canopy drops the chute -> freefall velocity', async ({ page }) => {
+  await page.goto(URL);
+  await cleanState(page);
+  const res = await page.evaluate(() => {
+    (window as any).paratroopers.push({ x: 200, y: 150, vy: 55, hasChute: true, chuteDeployed: true, state: 'falling', side: 0 });
+    (window as any).shells.push({ x: 200, y: 150 - 25, vx: 0, vy: 0 });
     (window as any).update(0.016);
+    return {
+      hasChute: (window as any).paratroopers[0].hasChute,
+      vy: (window as any).paratroopers[0].vy,
+      shells: (window as any).shells.length,
+    };
   });
+  console.log('after canopy hit:', res);
+  expect(res.hasChute).toBe(false);
+  expect(res.vy).toBe(280); // freefall speed
+  expect(res.shells).toBe(0);
+});
 
-  const chuteHitPara = await page.evaluate(() => {
-    return (window as any).paratroopers[0];
+test('a freefalling (no-chute) para splats on the ground', async ({ page }) => {
+  await page.goto(URL);
+  await cleanState(page);
+  const res = await page.evaluate(() => {
+    const groundY = (window as any).groundY;
+    (window as any).paratroopers.push({ x: 200, y: groundY - 8, vy: 280, hasChute: false, chuteDeployed: true, state: 'falling', side: 0 });
+    (window as any).update(0.05);
+    return (window as any).paratroopers.length;
   });
-  console.log('Para after chute hit:', chuteHitPara);
-  expect(chuteHitPara.parachute).toBe(false);
-  expect(chuteHitPara.state).toBe('freefalling');
-  expect(chuteHitPara.vy).toBe(300);
+  console.log('paras after freefall hit ground:', res);
+  expect(res).toBe(0);
+});
 
-  // Take screenshot of panicked freefalling trooper
-  await page.screenshot({ path: path.join(__dirname, 'screenshot_freefalling_trooper.png') });
-
-  // 8. Test Ground Trooper Immunity to Gunfire
-  await page.evaluate(() => {
-    (window as any).shells = [];
-    (window as any).paratroopers = [];
-    const H = (window as any).H;
+test('grounded (walking) paras are immune to shells', async ({ page }) => {
+  await page.goto(URL);
+  await cleanState(page);
+  const res = await page.evaluate(() => {
+    const groundY = (window as any).groundY;
     const turretX = (window as any).turretX;
-    
-    // Spawn walking trooper on ground
-    (window as any).paratroopers.push({
-      x: turretX - 120,
-      y: H * 0.92 - 5,
-      vy: 0,
-      vx: 38,
-      parachute: false,
-      state: "walking",
-      side: "left",
-      stackLevel: 0,
-      animTimer: 0
-    });
-
-    // Spawn shell directly aiming through the walking trooper
-    (window as any).shells.push({
-      x: turretX - 120,
-      y: H * 0.92 - 5,
-      vx: 100,
-      vy: 0
-    });
-
+    (window as any).paratroopers.push({ x: turretX - 120, y: groundY - 5, vy: 0, hasChute: false, chuteDeployed: true, state: 'walking', side: -1 });
+    (window as any).shells.push({ x: turretX - 120, y: groundY - 5, vx: 100, vy: 0 });
     (window as any).update(0.016);
+    const p = (window as any).paratroopers[0];
+    return { count: (window as any).paratroopers.length, state: p ? p.state : null };
   });
+  console.log('walking para after shell pass:', res);
+  expect(res.count).toBe(1);
+  expect(res.state).toBe('walking');
+});
 
-  // Take screenshot showing shell passing through ground trooper
-  await page.screenshot({ path: path.join(__dirname, 'screenshot_ground_immunity.png') });
-
-  const walkingTrooperAfterShell = await page.evaluate(() => (window as any).paratroopers[0]);
-  console.log('Walking trooper after shell collision step:', walkingTrooperAfterShell);
-  expect(walkingTrooperAfterShell).toBeDefined();
-  expect(walkingTrooperAfterShell.state).toBe('walking'); // Immune to gunfire!
-
-  // 9. Test Bomb Killing Men on Ground
-  await page.evaluate(() => {
-    (window as any).shells = [];
-    const H = (window as any).H;
-    const trooperX = (window as any).paratroopers[0].x;
-    
-    // Spawn bomb dropping directly onto walking trooper
-    (window as any).bombs.push({
-      x: trooperX,
-      y: H * 0.92 - 10,
-      vx: 0,
-      vy: 100
-    });
-
-    (window as any).update(0.05);
-  });
-
-  const troopersAfterBomb = await page.evaluate(() => (window as any).paratroopers.length);
-  console.log('Troopers after bomb hit:', troopersAfterBomb);
-  expect(troopersAfterBomb).toBe(0); // Killed by bomb!
-
-  // 10. Test Freefalling Paratrooper Crushing Ground Trooper
-  await page.evaluate(() => {
-    const H = (window as any).H;
+test('a ground bomb kills nearby grounded paras', async ({ page }) => {
+  await page.goto(URL);
+  await cleanState(page);
+  const res = await page.evaluate(() => {
+    const groundY = (window as any).groundY;
     const turretX = (window as any).turretX;
-    (window as any).bombs = [];
-    (window as any).shells = [];
-    (window as any).paratroopers = [];
-
-    // Ground stacked trooper
-    (window as any).paratroopers.push({
-      x: turretX - 28,
-      y: H * 0.92 - 5,
-      vy: 0,
-      vx: 0,
-      parachute: false,
-      state: "stacked",
-      side: "left",
-      stackLevel: 0,
-      animTimer: 0
-    });
-
-    // Freefalling trooper directly above
-    (window as any).paratroopers.push({
-      x: turretX - 28,
-      y: H * 0.92 - 15,
-      vy: 300,
-      vx: 0,
-      parachute: false,
-      state: "freefalling",
-      side: null,
-      stackLevel: 0,
-      animTimer: 0
-    });
-
-    // Run step so freefalling trooper hits the ground
+    (window as any).paratroopers.push({ x: turretX - 40, y: groundY - 5, vy: 0, hasChute: false, chuteDeployed: true, state: 'stacked', side: -1 });
+    (window as any).bombs.push({ x: turretX - 40, y: groundY, vx: 0, vy: 100 });
     (window as any).update(0.05);
+    return (window as any).paratroopers.length;
   });
+  console.log('paras after ground bomb:', res);
+  expect(res).toBe(0);
+});
 
-  const troopersAfterCrush = await page.evaluate(() => (window as any).paratroopers.length);
-  console.log('Troopers after crush:', troopersAfterCrush);
-  expect(troopersAfterCrush).toBe(0); // Both crushed & splatted!
-
-  // 11. Mobile Viewport & Mobile Controls Rapid Fire
+test('mobile canvas tap fires the turret', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.evaluate(() => {
-    (window as any).startGame();
-  });
-  await expect(page.locator('#overlay')).toBeHidden();
-  await page.waitForTimeout(200);
+  await page.goto(URL);
+  await page.locator('button.start-btn').click();
+  await page.waitForTimeout(120);
+  await page.evaluate(() => { (window as any).shells = []; (window as any).helicopters = []; (window as any).paratroopers = []; (window as any).bombs = []; });
 
-  // Test Rapid fire on mobile fire button
-  const scoreBeforeMobileFire = await page.evaluate(() => (window as any).score);
-  await page.locator('#btn-fire').dispatchEvent('touchstart');
-  await page.waitForTimeout(450); // Hold for 450ms
-  await page.locator('#btn-fire').dispatchEvent('touchend');
-  await page.waitForTimeout(100);
-
-  const scoreAfterMobileFire = await page.evaluate(() => (window as any).score);
-  const shotsMobileFire = scoreBeforeMobileFire - scoreAfterMobileFire;
-  console.log(`Shots fired by holding mobile fire button: ${shotsMobileFire}`);
-  expect(shotsMobileFire).toBeGreaterThanOrEqual(2);
-
-  // Mobile screenshot
-  await page.screenshot({ path: path.join(__dirname, 'screenshot_mobile.png') });
+  const before = await page.evaluate(() => (window as any).shells.length);
+  await page.locator('#c').dispatchEvent('touchstart', { touches: [{ clientX: 195, clientY: 420, identifier: 1 }] });
+  await page.waitForTimeout(50);
+  const after = await page.evaluate(() => (window as any).shells.length);
+  console.log('mobile tap shells before/after:', before, after);
+  expect(after - before).toBeGreaterThanOrEqual(1);
+  await page.locator('#c').dispatchEvent('touchend', { changedTouches: [{ clientX: 195, clientY: 420, identifier: 1 }] });
 });
