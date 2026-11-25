@@ -67,7 +67,7 @@ canvas{display:block;touch-action:none}
     <h1>SABOTAGE</h1>
     <h2>Apple II · 1981 · Mark Allen</h2>
     <p>Defend your turret from helicopters, paratroopers &amp; jets.</p>
-    <p>3 soldiers piled in one pillar by the turret, or 4 on a side once the sky clears — your turret's gone.</p>
+    <p>3 soldiers piled in one pillar by the turret, or 4 on a side, and your turret's gone.</p>
     <p>Shoot their chute → they drop fast and SPLAT. Landed soldiers are safe from your shells — only the air matters.</p>
     <p class="controls">
       Desktop: ← → aim · Hold SPACE rapid fire<br>
@@ -375,22 +375,21 @@ function update(dt){
 
   // Step 3: Grounded soldiers threaten you the two original Sabotage ways —
   //   A) a 3-high pillar right by the turret (the top soldier reaches over it);
-  //   B) 4 soldiers on one side, once the sky is clear: they walk in, form a
-  //      human pyramid, and climb over the turret.
+  //   B) 4 soldiers on one side: they walk in, form a human pyramid, and climb
+  //      over the turret. (The squad commits as soon as 4 are down on a side —
+  //      that's what lets them overtake the turret, exactly like the original.)
   if(nearPillarHeight(-1)>=TOWER_NEEDED){ endGame("A 3-high pillar of soldiers reached over your turret on the left!"); return; }
   if(nearPillarHeight(1)>=TOWER_NEEDED){  endGame("A 3-high pillar of soldiers reached over your turret on the right!"); return; }
 
   if(!assault && running && (stackLeft.length>=PYRAMID_NEEDED||stackRight.length>=PYRAMID_NEEDED)){
     const side=stackLeft.length>=PYRAMID_NEEDED?-1:1;
-    if(skyClear()){
-      const arr=getStackArray(side).slice().sort((a,b)=>a.x-b.x);
-      arr.forEach(p=>{ if(p.state==="grounded") p.state="assault"; });
-      const base=turretX+side*STACK_OFFSET*0.55;
-      arr.forEach((p,idx)=>{ p.tgx=base; p.tgy=(H*TBY-5)-idx*PARA_H; });
-      assault={side,t:0,dur:ASSAULT_FORM};
-      waveMsg="⚠ PYRAMID ASSAULT "+(side<0?"LEFT":"RIGHT")+"!";waveMsgTimer=1.4;
-      AudioEngine.play("paraStack");
-    }
+    const arr=getStackArray(side).slice().sort((a,b)=>a.x-b.x);
+    arr.forEach(p=>{ if(p.state==="grounded") p.state="assault"; });
+    const base=turretX+side*STACK_OFFSET*0.55;
+    arr.forEach((p,idx)=>{ p.tgx=base; p.tgy=(H*TBY-5)-idx*PARA_H; });
+    assault={side,t:0,dur:ASSAULT_FORM};
+    waveMsg="⚠ PYRAMID ASSAULT "+(side<0?"LEFT":"RIGHT")+" — climbing the turret!";waveMsgTimer=1.6;
+    AudioEngine.play("paraStack");
   }
   if(assault&&running){
     const arr=getStackArray(assault.side);

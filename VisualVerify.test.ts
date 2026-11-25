@@ -15,8 +15,8 @@ import path from 'path';
  *     paras — shoot the canopy and they drop fast and SPLAT. Landed soldiers
  *     (`state "grounded"`) stand where they land and are shell-immune. Two ways
  *     they end the game: (A) 3 piled in ONE column right by the turret ("a
- *     3-high pillar … reaches over") , or (B) 4 on ONE side once the sky is clear
- *     → the squad forms a "human pyramid" that climbs over it. Ground bombs still
+ *     3-high pillar … reaches over") , or (B) 4 land on ONE side → the squad
+ *     commits a "human pyramid" that climbs over it (as soon as 4 are down). Ground bombs still
  *     kill nearby troopers.
  *
  * Game state (W, H, scale, offsetX, offsetY, cssW, cssH, turretX, groundY,
@@ -144,13 +144,13 @@ test('a 3-high pillar beside the turret reaches over it (game over)', async ({ p
   expect(reason).toContain('left');
 });
 
-test('4 on one side, sky clear -> the squad forms a human pyramid (game over)', async ({ page }) => {
+test('4 on one side -> the squad forms a human pyramid (game over)', async ({ page }) => {
   await page.goto(URL);
   await cleanState(page);
   const res = await page.evaluate(() => {
     const turretX = (window as any).turretX;
     const groundY = (window as any).groundY;
-    // 4 scattered soldiers (no 3-pillar, none within reach) on the LEFT; sky clear.
+    // 4 scattered soldiers (no 3-pillar, none within reach) on the LEFT.
     const xs = [turretX - 180, turretX - 130, turretX - 95, turretX - 160];
     for (const x of xs) {
       const p = { x, y: groundY - 5, vy: 0, hasChute: false, chuteDeployed: true, state: 'grounded', side: -1 };
@@ -170,7 +170,7 @@ test('4 on one side, sky clear -> the squad forms a human pyramid (game over)', 
   expect(reason).toContain('pyramid');
 });
 
-test('the pyramid waits while a soldier is still in the air', async ({ page }) => {
+test('four on one side attack even while others are still in the air', async ({ page }) => {
   await page.goto(URL);
   await cleanState(page);
   const res = await page.evaluate(() => {
@@ -182,15 +182,19 @@ test('the pyramid waits while a soldier is still in the air', async ({ page }) =
       (window as any).paratroopers.push(p);
       (window as any).stackLeft.push(p);
     }
-    // One para still descending keeps the "sky clear" check false -> hold position.
+    // A soldier still descending no longer delays the assault (4-on-a-side commits).
     (window as any).paratroopers.push({ x: 150, y: 40, vy: 55, hasChute: true, chuteDeployed: true, state: 'falling', side: 0 });
-    for (let i = 0; i < 24; i++) (window as any).update(0.05); // ~1.2s of simulation
-    const air = (window as any).paratroopers.find((p: any) => p.state === 'falling');
-    return { running: (window as any).running, airStillFalling: !!air };
+    let guard = 0;
+    while ((window as any).running && guard++ < 400) (window as any).update(0.05);
+    return { running: (window as any).running };
   });
-  console.log('blocked pyramid:', res);
-  expect(res.airStillFalling).toBe(true);
-  expect(res.running).toBe(true);
+  console.log('pyramid while airborne:', res);
+  expect(res.running).toBe(false);
+
+  await page.waitForTimeout(1100);
+  const reason = (await page.locator('#overlay h2').textContent()) || '';
+  console.log('game over reason:', reason);
+  expect(reason).toContain('pyramid');
 });
 
 test('shooting the canopy drops the chute -> freefall velocity', async ({ page }) => {
